@@ -22,6 +22,27 @@ public class PagamentoTests
     }
 
     [Fact]
+    public void RegistrarPreferencia_so_uma_vez_e_so_pendente()
+    {
+        // reentrega da mensagem CriarCobranca não troca o link de um pagamento já pago
+        var p = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 10m);
+        p.RegistrarPreferencia("pref-1", "https://mp/1");
+        FluentActions.Invoking(() => p.RegistrarPreferencia("pref-2", "https://mp/2")).Should().Throw<DomainException>();
+        p.PreferenceId.Should().Be("pref-1");
+
+        p.Aprovar("123");
+        FluentActions.Invoking(() => p.RegistrarPreferencia("pref-3", "https://mp/3")).Should().Throw<DomainException>();
+        p.LinkPagamento.Should().Be("https://mp/1");
+    }
+
+    [Fact]
+    public void Criar_exige_os_e_orcamento()
+    {
+        FluentActions.Invoking(() => Pagamento.Criar(Guid.Empty, Guid.NewGuid(), 10m)).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => Pagamento.Criar(Guid.NewGuid(), Guid.Empty, 10m)).Should().Throw<DomainException>();
+    }
+
+    [Fact]
     public void Regras_invalidas_lancam()
     {
         FluentActions.Invoking(() => Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 0m)).Should().Throw<DomainException>();

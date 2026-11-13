@@ -31,6 +31,26 @@ public class OrcamentoTests
     }
 
     [Fact]
+    public void Gerar_com_itens_nulo_lanca_domain_exception()
+    {
+        FluentActions.Invoking(() => Orcamento.Gerar(Guid.NewGuid(), Guid.NewGuid(), null!, TimeSpan.FromHours(1)))
+            .Should().Throw<DomainException>().WithMessage("Orçamento sem itens.");
+    }
+
+    [Fact]
+    public void Aprovar_considera_offset_de_data_local()
+    {
+        var o = Novo(TimeSpan.FromHours(1));
+        // Mesmo instante de ValidoAte + 1h, mas expresso no fuso da máquina (Kind = Local):
+        // comparar os ticks crus aceitaria um orçamento já vencido em fuso a oeste de UTC.
+        var expiradoLocal = DateTime.SpecifyKind(
+            o.ValidoAte.AddHours(1).Add(TimeZoneInfo.Local.GetUtcOffset(o.ValidoAte)), DateTimeKind.Local);
+
+        FluentActions.Invoking(() => o.Aprovar(expiradoLocal)).Should().Throw<DomainException>()
+            .WithMessage("Orçamento expirado.");
+    }
+
+    [Fact]
     public void Aprovar_dentro_da_validade_muda_status()
     {
         var o = Novo();

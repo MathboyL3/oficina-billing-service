@@ -20,6 +20,8 @@ public sealed class Pagamento
 
     public static Pagamento Criar(Guid ordemServicoId, Guid orcamentoId, decimal valor)
     {
+        if (ordemServicoId == Guid.Empty) throw new DomainException("OS é obrigatória.");
+        if (orcamentoId == Guid.Empty) throw new DomainException("Orçamento é obrigatório.");
         if (valor <= 0) throw new DomainException("Valor do pagamento deve ser positivo.");
         return new Pagamento
         {
@@ -33,6 +35,9 @@ public sealed class Pagamento
 
     public void RegistrarPreferencia(string preferenceId, string link)
     {
+        // Reentrega de CriarCobranca não pode trocar o link de uma cobrança já emitida.
+        Exigir(StatusPagamento.Pendente);
+        if (PreferenceId is not null) throw new DomainException("Pagamento já possui preferência.");
         PreferenceId = preferenceId;
         LinkPagamento = link;
         Tocar();

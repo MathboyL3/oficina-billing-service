@@ -18,7 +18,7 @@ public sealed class Orcamento
 
     public static Orcamento Gerar(Guid ordemServicoId, Guid clienteId, IEnumerable<ItemOrcamentoDominio> itens, TimeSpan validade)
     {
-        var lista = itens.ToList();
+        var lista = itens?.ToList() ?? throw new DomainException("Orçamento sem itens.");
         if (ordemServicoId == Guid.Empty) throw new DomainException("OS é obrigatória.");
         if (lista.Count == 0) throw new DomainException("Orçamento sem itens.");
         if (lista.Any(i => i.Quantidade <= 0 || i.ValorUnitario < 0)) throw new DomainException("Item de orçamento inválido.");
@@ -38,7 +38,12 @@ public sealed class Orcamento
     public void Aprovar(DateTime agora)
     {
         ExigirPendente();
-        if (agora > ValidoAte) throw new DomainException("Orçamento expirado.");
+        // ValidoAte é UTC: um DateTime Kind=Local (ou Unspecified) precisa ser convertido antes,
+        // senão o offset do fuso entra na comparação de ticks.
+        var instante = agora.Kind == DateTimeKind.Local
+            ? agora.ToUniversalTime()
+            : DateTime.SpecifyKind(agora, DateTimeKind.Utc);
+        if (instante > ValidoAte) throw new DomainException("Orçamento expirado.");
         Status = StatusOrcamento.Aprovado;
     }
 
