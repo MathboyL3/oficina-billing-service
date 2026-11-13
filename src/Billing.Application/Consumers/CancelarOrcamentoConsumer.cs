@@ -38,7 +38,7 @@ public sealed class CancelarOrcamentoConsumer : IConsumer<CancelarOrcamento>
         var pag = await _pags.ObterPorOsAsync(m.OrdemServicoId, ct);
         if (pag is { Status: StatusPagamento.Pendente })
         {
-            var info = await _gw.BuscarPorReferenciaAsync(pag.Id.ToString(), ct);
+            var info = await _gw.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), ct);
             if (info is { Status: StatusPagamentoGateway.Aprovado })
             {
                 _log.LogInformation("Cancelamento da OS {OrdemServicoId} encontrou pagamento aprovado no MP: estornando", m.OrdemServicoId);

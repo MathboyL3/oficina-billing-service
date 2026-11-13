@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using MassTransit.DependencyInjection;
 using MassTransit.MongoDbIntegration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +11,6 @@ namespace Billing.Infrastructure.Persistence;
 /// nos endpoints HTTP ela é aberta na primeira escrita e confirmada pelo <see cref="MongoUnitOfWork"/>,
 /// junto com as mensagens do bus outbox. <c>MongoDbContext</c> só existe quando o outbox Mongo está ativo.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public sealed class MongoSessao
 {
     private readonly MongoDbContext? _ctx;

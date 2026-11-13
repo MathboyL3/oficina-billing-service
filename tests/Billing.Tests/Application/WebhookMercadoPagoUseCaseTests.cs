@@ -19,7 +19,7 @@ public class WebhookMercadoPagoUseCaseTests
     private Pagamento Pendente()
     {
         var p = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 100m);
-        _repo.Setup(r => r.ObterPorIdAsync(p.Id, It.IsAny<CancellationToken>())).ReturnsAsync(p);
+        _repo.Setup(r => r.ObterPorOsAsync(p.OrdemServicoId, It.IsAny<CancellationToken>())).ReturnsAsync(p);
         return p;
     }
 
@@ -28,7 +28,7 @@ public class WebhookMercadoPagoUseCaseTests
     {
         var p = Pendente();
         _gw.Setup(g => g.ObterPagamentoAsync("77", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, p.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, p.OrdemServicoId.ToString(), "approved"));
         await Uc().ProcessarAsync("77", default);
         p.Status.Should().Be(StatusPagamento.Aprovado);
         _repo.Verify(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>()), Times.Once);
@@ -40,7 +40,7 @@ public class WebhookMercadoPagoUseCaseTests
     {
         var p = Pendente();
         _gw.Setup(g => g.ObterPagamentoAsync("79", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("79", StatusPagamentoGateway.Aprovado, p.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("79", StatusPagamentoGateway.Aprovado, p.OrdemServicoId.ToString(), "approved"));
         _repo.Setup(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", p.Id));
 
         await Uc().ProcessarAsync("79", default);
@@ -53,7 +53,7 @@ public class WebhookMercadoPagoUseCaseTests
     {
         var p = Pendente();
         _gw.Setup(g => g.ObterPagamentoAsync("80", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("80", StatusPagamentoGateway.Recusado, p.Id.ToString(), "rejected"));
+            .ReturnsAsync(new PagamentoInfo("80", StatusPagamentoGateway.Recusado, p.OrdemServicoId.ToString(), "rejected"));
         _repo.Setup(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", p.Id));
 
         await Uc().ProcessarAsync("80", default);
@@ -66,7 +66,7 @@ public class WebhookMercadoPagoUseCaseTests
     {
         var p = Pendente();
         _gw.Setup(g => g.ObterPagamentoAsync("78", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("78", StatusPagamentoGateway.Recusado, p.Id.ToString(), "rejected"));
+            .ReturnsAsync(new PagamentoInfo("78", StatusPagamentoGateway.Recusado, p.OrdemServicoId.ToString(), "rejected"));
         await Uc().ProcessarAsync("78", default);
         _bus.Verify(b => b.Publish(It.Is<PagamentoRecusado>(m => m.PagamentoId == p.Id), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -77,11 +77,11 @@ public class WebhookMercadoPagoUseCaseTests
         var p = Pendente();
         p.Aprovar("77");
         _gw.Setup(g => g.ObterPagamentoAsync("77", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, p.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, p.OrdemServicoId.ToString(), "approved"));
         _gw.Setup(g => g.ObterPagamentoAsync("x", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PagamentoInfo("x", StatusPagamentoGateway.Aprovado, Guid.NewGuid().ToString(), "approved"));
         _gw.Setup(g => g.ObterPagamentoAsync("y", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("y", StatusPagamentoGateway.Pendente, p.Id.ToString(), "in_process"));
+            .ReturnsAsync(new PagamentoInfo("y", StatusPagamentoGateway.Pendente, p.OrdemServicoId.ToString(), "in_process"));
         _gw.Setup(g => g.ObterPagamentoAsync("z", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PagamentoInfo("z", StatusPagamentoGateway.Aprovado, "nao-eh-guid", "approved"));
 

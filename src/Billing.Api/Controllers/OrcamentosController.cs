@@ -15,11 +15,11 @@ public class OrcamentosController : ControllerBase
     public OrcamentosController(OrcamentoUseCases uc) => _uc = uc;
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OrcamentoResponse>> Obter(Guid id, CancellationToken ct) => Ok(await _uc.ObterAsync(id, ct));
+    public async Task<ActionResult<OrcamentoResponse>> Obter(Guid id, CancellationToken ct) => Ok(await _uc.ObterAsync(id, ClienteDoToken(), ct));
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<OrcamentoResponse>>> ListarPorOs([FromQuery] Guid osId, CancellationToken ct)
-        => Ok(await _uc.ListarPorOsAsync(osId, ct));
+        => Ok(await _uc.ListarPorOsAsync(osId, ClienteDoToken(), ct));
 
     /// <summary>Aprova o orçamento (cliente dono, atendente ou gerente) e publica OrcamentoAprovado.</summary>
     [HttpPost("{id:guid}/aprovar")]

@@ -1,9 +1,7 @@
-using System.Diagnostics.CodeAnalysis;
 using Billing.Domain.Common;
 
 namespace Billing.Infrastructure.Persistence;
 
-[ExcludeFromCodeCoverage]
 public sealed class MongoUnitOfWork : IUnitOfWork
 {
     private readonly MongoSessao _sessao;

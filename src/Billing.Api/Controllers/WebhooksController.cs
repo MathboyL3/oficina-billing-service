@@ -39,14 +39,28 @@ public class WebhooksController : ControllerBase
         [FromHeader(Name = "x-request-id")] string? requestId,
         CancellationToken ct)
     {
-        var (dataIdCorpo, tipoCorpo) = await LerCorpoAsync(ct);
-        var dataId = dataIdQuery ?? dataIdCorpo;
-        var tipo = type ?? tipoCorpo;
+        var dataId = dataIdQuery;
+        var tipo = type;
+
+        // Formato do MP: data.id na query string — a assinatura é validada antes de ler/parsear o corpo.
+        // Só quando o data.id não vem na query o corpo precisa ser lido antes, porque o id assinado está nele.
+        if (dataId is null)
+        {
+            var (dataIdCorpo, tipoCorpo) = await LerCorpoAsync(ct);
+            dataId = dataIdCorpo;
+            tipo ??= tipoCorpo;
+        }
 
         if (!AssinaturaWebhook.Valida(assinatura, requestId, dataId, _opt.WebhookSecret))
         {
             _log.LogWarning("Webhook MP com assinatura inválida (data.id={DataId})", dataId);
             return Unauthorized(new { status = 401, message = "Assinatura inválida." });
+        }
+
+        if (tipo is null)
+        {
+            var (_, tipoCorpo) = await LerCorpoAsync(ct);
+            tipo = tipoCorpo;
         }
 
         if (tipo == "payment" && dataId is not null)

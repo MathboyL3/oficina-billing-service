@@ -77,7 +77,7 @@ public class OrcamentoUseCasesTests
     [Fact]
     public async Task Obter_inexistente_NotFound()
     {
-        var act = () => Uc().ObterAsync(Guid.NewGuid(), default);
+        var act = () => Uc().ObterAsync(Guid.NewGuid(), null, default);
         await act.Should().ThrowAsync<NotFoundException>();
     }
 
@@ -86,8 +86,8 @@ public class OrcamentoUseCasesTests
     {
         var o = Pendente();
         _orcs.Setup(r => r.ListarPorOsAsync(o.OrdemServicoId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { o });
-        (await Uc().ObterAsync(o.Id, default)).Itens.Should().HaveCount(1);
-        (await Uc().ListarPorOsAsync(o.OrdemServicoId, default)).Should().ContainSingle(x => x.Id == o.Id);
+        (await Uc().ObterAsync(o.Id, null, default)).Itens.Should().HaveCount(1);
+        (await Uc().ListarPorOsAsync(o.OrdemServicoId, null, default)).Should().ContainSingle(x => x.Id == o.Id);
     }
 
     [Fact]
@@ -96,10 +96,10 @@ public class OrcamentoUseCasesTests
         var p = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 10m);
         p.RegistrarPreferencia("p", "http://l");
         _pags.Setup(r => r.ObterPorIdAsync(p.Id, It.IsAny<CancellationToken>())).ReturnsAsync(p);
-        var r = await Uc().ObterPagamentoAsync(p.Id, default);
+        var r = await Uc().ObterPagamentoAsync(p.Id, null, default);
         r.LinkPagamento.Should().Be("http://l");
         r.Status.Should().Be("Pendente");
-        var act = () => Uc().ObterPagamentoAsync(Guid.NewGuid(), default);
+        var act = () => Uc().ObterPagamentoAsync(Guid.NewGuid(), null, default);
         await act.Should().ThrowAsync<NotFoundException>();
     }
 }

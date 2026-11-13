@@ -61,13 +61,14 @@ public class BillingConsumersTests
     }
 
     [Fact]
-    public async Task GerarOrcamento_reentrega_concorrente_no_indice_unico_nao_falha_nem_publica()
+    public async Task GerarOrcamento_corrida_no_indice_unico_propaga_para_o_retry_sem_publicar_nem_confirmar()
     {
         _orcs.Setup(r => r.InserirAsync(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>())).ThrowsAsync(new DuplicidadeException("orcamentos.OrdemServicoId"));
         var ctx = Ctx(new GerarOrcamento(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), new[] { new ItemOrcamento("Peca", Guid.NewGuid(), "p", 5m, 2) }, 10m));
 
-        await Gerar().Consume(ctx.Object);
+        var act = () => Gerar().Consume(ctx.Object);
 
+        await act.Should().ThrowAsync<DuplicidadeException>();
         _ordem.Should().BeEmpty();
     }
 
@@ -155,7 +156,7 @@ public class BillingConsumersTests
         _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
         _gw.Setup(g => g.EstornarAsync("66", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "boom"));
         _gw.Setup(g => g.ObterPagamentoAsync("66", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("66", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("66", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
 
         await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "x")).Object);
 
@@ -197,13 +198,58 @@ public class BillingConsumersTests
     }
 
     [Fact]
-    public async Task CriarCobranca_reentrega_concorrente_no_indice_unico_nao_cobra_nem_publica()
+    public async Task CriarCobranca_corrida_no_indice_unico_propaga_para_o_retry_sem_cobrar_nem_publicar()
     {
         _pags.Setup(r => r.InserirAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>())).ThrowsAsync(new DuplicidadeException("pagamentos.OrdemServicoId"));
 
+        var act = () => Cobrar("Real").Consume(Ctx(new CriarCobranca(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), 10m)).Object);
+
+        await act.Should().ThrowAsync<DuplicidadeException>();
+        _gw.Verify(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _ordem.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CriarCobranca_concorrencia_ao_gravar_preferencia_conta_como_ja_processado()
+    {
+        _gw.Setup(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CobrancaCriadaResult("pref-1", "http://mp/pay"));
+        _pags.Setup(r => r.AtualizarAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", Guid.NewGuid()));
+
         await Cobrar("Real").Consume(Ctx(new CriarCobranca(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), 10m)).Object);
 
-        _gw.Verify(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _ordem.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CriarCobranca_retomada_de_pagamento_pendente_sem_preferencia_emite_cobranca_e_atualiza()
+    {
+        var os = Guid.NewGuid();
+        var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
+        _gw.Setup(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CobrancaCriadaResult("pref-9", "http://mp/9"));
+        var ctx = Ctx(new CriarCobranca(os, DateTime.UtcNow, pag.OrcamentoId, 10m));
+
+        await Cobrar("Real").Consume(ctx.Object);
+
+        _pags.Verify(r => r.InserirAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>()), Times.Never);
+        _gw.Verify(g => g.CriarCobrancaAsync(It.Is<CriarCobrancaRequest>(q => q.OrdemServicoId == os && q.PagamentoId == pag.Id), It.IsAny<CancellationToken>()), Times.Once);
+        _pags.Verify(r => r.AtualizarAsync(pag, It.IsAny<CancellationToken>()), Times.Once);
+        pag.PreferenceId.Should().Be("pref-9");
+        ctx.Verify(c => c.Publish(It.Is<CobrancaCriada>(m => m.LinkPagamento == "http://mp/9"), It.IsAny<CancellationToken>()), Times.Once);
+        _ordem.Should().Equal("CobrancaCriada", "commit");
+    }
+
+    [Fact]
+    public async Task CriarCobranca_concorrencia_ao_gravar_na_retomada_conta_como_ja_processado()
+    {
+        var os = Guid.NewGuid();
+        var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
+        _gw.Setup(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CobrancaCriadaResult("pref-9", "http://mp/9"));
+        _pags.Setup(r => r.AtualizarAsync(pag, It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", pag.Id));
+
+        await Cobrar("Real").Consume(Ctx(new CriarCobranca(os, DateTime.UtcNow, pag.OrcamentoId, 10m)).Object);
+
         _ordem.Should().BeEmpty();
     }
 
@@ -230,8 +276,8 @@ public class BillingConsumersTests
         Pagamento? inserido = null;
         _gw.Setup(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CobrancaCriadaResult("pref-1", "http://fake/pay"));
         _pags.Setup(r => r.InserirAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>())).Callback((Pagamento p, CancellationToken _) => inserido = p).Returns(Task.CompletedTask);
-        _pags.Setup(r => r.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => inserido);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).Returns(() => Task.FromResult(inserido));
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(os.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string r, CancellationToken _) => new PagamentoInfo("9", StatusPagamentoGateway.Aprovado, r, "approved"));
         var bus = new Mock<IPublishEndpoint>();
         bus.Setup(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>())).Callback(() => _ordem.Add("PagamentoConfirmado")).Returns(Task.CompletedTask);
@@ -267,8 +313,8 @@ public class BillingConsumersTests
         var pag = Pagamento.Criar(os, orc.Id, 10m);
         _orcs.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(orc);
         _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.Id.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
         _gw.Setup(g => g.EstornarAsync("55", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
 
         await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "recusado")).Object);
@@ -284,11 +330,11 @@ public class BillingConsumersTests
         var os = Guid.NewGuid();
         var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
         _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.Id.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
         _gw.Setup(g => g.EstornarAsync("55", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "boom"));
         _gw.Setup(g => g.ObterPagamentoAsync("55", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
 
         await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "x")).Object);
 
@@ -302,7 +348,7 @@ public class BillingConsumersTests
         var os = Guid.NewGuid();
         var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
         _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.Id.ToString(), It.IsAny<CancellationToken>())).ReturnsAsync((PagamentoInfo?)null);
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), It.IsAny<CancellationToken>())).ReturnsAsync((PagamentoInfo?)null);
 
         await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "x")).Object);
 
@@ -349,7 +395,7 @@ public class BillingConsumersTests
         var pag = Aprovado(os);
         _gw.Setup(g => g.EstornarAsync("77", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "indisponivel"));
         _gw.Setup(g => g.ObterPagamentoAsync("77", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
 
         await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);
 
@@ -364,7 +410,7 @@ public class BillingConsumersTests
         var pag = Aprovado(os);
         _gw.Setup(g => g.EstornarAsync("77", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "timeout"));
         _gw.Setup(g => g.ObterPagamentoAsync("77", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Estornado, pag.Id.ToString(), "refunded"));
+            .ReturnsAsync(new PagamentoInfo("77", StatusPagamentoGateway.Estornado, pag.OrdemServicoId.ToString(), "refunded"));
 
         await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);
 
@@ -405,8 +451,8 @@ public class BillingConsumersTests
         var os = Guid.NewGuid();
         var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
         _pags.Setup(r => r.ObterPorIdAsync(pag.Id, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.Id.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("88", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("88", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
         _gw.Setup(g => g.EstornarAsync("88", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
 
         await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);
@@ -421,7 +467,7 @@ public class BillingConsumersTests
         var os = Guid.NewGuid();
         var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
         _pags.Setup(r => r.ObterPorIdAsync(pag.Id, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.Id.ToString(), It.IsAny<CancellationToken>())).ReturnsAsync((PagamentoInfo?)null);
+        _gw.Setup(g => g.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), It.IsAny<CancellationToken>())).ReturnsAsync((PagamentoInfo?)null);
 
         await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);
 

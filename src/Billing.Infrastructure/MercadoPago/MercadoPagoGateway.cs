@@ -26,17 +26,17 @@ public sealed class MercadoPagoGateway : IGatewayPagamento
         _opt = opt.Value;
     }
 
-    /// <summary>Preferência do Checkout Pro; a <c>external_reference</c> é o id do nosso Pagamento.</summary>
+    /// <summary>Preferência do Checkout Pro; a <c>external_reference</c> é o id da OS e a chave de idempotência é por OS (retomada não duplica preferência).</summary>
     public async Task<CobrancaCriadaResult> CriarCobrancaAsync(CriarCobrancaRequest r, CancellationToken ct)
     {
         var body = new
         {
             items = new[] { new { id = r.OrdemServicoId.ToString(), title = r.Descricao, quantity = 1, currency_id = "BRL", unit_price = r.Valor } },
-            external_reference = r.PagamentoId.ToString(),
+            external_reference = r.OrdemServicoId.ToString(),
             notification_url = $"{_opt.PublicBaseUrl.TrimEnd('/')}/webhooks/mercadopago"
         };
         using var req = Request(HttpMethod.Post, "/checkout/preferences");
-        req.Headers.Add("X-Idempotency-Key", r.PagamentoId.ToString());
+        req.Headers.Add("X-Idempotency-Key", $"pref-{r.OrdemServicoId}");
         req.Content = JsonContent.Create(body, options: Json);
         using var resp = await _http.SendAsync(req, ct);
         resp.EnsureSuccessStatusCode();

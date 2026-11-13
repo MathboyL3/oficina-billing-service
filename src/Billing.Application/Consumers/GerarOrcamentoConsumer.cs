@@ -54,14 +54,10 @@ public sealed class GerarOrcamentoConsumer : IConsumer<GerarOrcamento>
                     : new ItemOrcamentoDominio(i.Tipo, i.ItemId, i.Descricao, i.ValorUnitario, i.Quantidade))
                 .ToList();
             var orc = Orcamento.Gerar(m.OrdemServicoId, m.ClienteId, itens, _opt.ValidadeOrcamento);
+            // DuplicidadeException (corrida no índice único por OS) propaga de propósito: o E11000 aborta a transação
+            // e o retry do MassTransit reprocessa a mensagem, que cai no caminho idempotente acima.
             await _repo.InserirAsync(orc, ct);
             await context.Publish(new OrcamentoGerado(m.OrdemServicoId, DateTime.UtcNow, orc.Id, orc.ValorTotal, orc.ValidoAte), ct);
-        }
-        catch (DuplicidadeException)
-        {
-            // Entrega concorrente já gerou o orçamento (índice único por OS): a outra entrega publica e confirma.
-            _log.LogInformation("GerarOrcamento ignorado: OS {OrdemServicoId} já recebeu orçamento de outra entrega concorrente", m.OrdemServicoId);
-            return;
         }
         catch (DomainException ex)
         {

@@ -14,11 +14,12 @@ public class FakeGatewayPagamentoTests
     {
         var gw = Gw("Aprovar");
         var pid = Guid.NewGuid();
-        var c = await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, Guid.NewGuid(), "x", 10m), default);
+        var os = Guid.NewGuid();
+        var c = await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, os, "x", 10m), default);
         c.LinkPagamento.Should().Be($"http://local/fake-checkout/{pid}");
-        var info = await gw.BuscarPorReferenciaAsync(pid.ToString(), default);
+        var info = await gw.BuscarPorReferenciaAsync(os.ToString(), default);
         info!.Status.Should().Be(StatusPagamentoGateway.Aprovado);
-        (await gw.ObterPagamentoAsync(info.PaymentId, default)).ExternalReference.Should().Be(pid.ToString());
+        (await gw.ObterPagamentoAsync(info.PaymentId, default)).ExternalReference.Should().Be(os.ToString());
         (await gw.EstornarAsync(info.PaymentId, null, default)).Sucesso.Should().BeTrue();
     }
 
@@ -32,21 +33,21 @@ public class FakeGatewayPagamentoTests
     public async Task Estorno_ok_muda_status_para_estornado()
     {
         var gw = Gw("Aprovar");
-        var pid = Guid.NewGuid();
-        await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, Guid.NewGuid(), "x", 10m), default);
-        var info = (await gw.BuscarPorReferenciaAsync(pid.ToString(), default))!;
+        var os = Guid.NewGuid();
+        await gw.CriarCobrancaAsync(new CriarCobrancaRequest(Guid.NewGuid(), os, "x", 10m), default);
+        var info = (await gw.BuscarPorReferenciaAsync(os.ToString(), default))!;
 
         (await gw.EstornarAsync(info.PaymentId, null, default)).Sucesso.Should().BeTrue();
 
-        (await gw.BuscarPorReferenciaAsync(pid.ToString(), default))!.Status.Should().Be(StatusPagamentoGateway.Estornado);
+        (await gw.BuscarPorReferenciaAsync(os.ToString(), default))!.Status.Should().Be(StatusPagamentoGateway.Estornado);
     }
 
     [Fact]
     public async Task Recusar_e_FalharEstorno()
     {
-        var pid = Guid.NewGuid();
-        await Gw("Recusar").CriarCobrancaAsync(new CriarCobrancaRequest(pid, Guid.NewGuid(), "x", 10m), default);
-        (await Gw("Recusar").BuscarPorReferenciaAsync(pid.ToString(), default))!.Status.Should().Be(StatusPagamentoGateway.Recusado);
+        var os = Guid.NewGuid();
+        await Gw("Recusar").CriarCobrancaAsync(new CriarCobrancaRequest(Guid.NewGuid(), os, "x", 10m), default);
+        (await Gw("Recusar").BuscarPorReferenciaAsync(os.ToString(), default))!.Status.Should().Be(StatusPagamentoGateway.Recusado);
         (await Gw("FalharEstorno").EstornarAsync("qualquer", null, default)).Sucesso.Should().BeFalse();
         (await Gw("Aprovar").BuscarPorReferenciaAsync(Guid.NewGuid().ToString(), default)).Should().BeNull();
     }

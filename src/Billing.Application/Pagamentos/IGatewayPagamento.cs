@@ -1,5 +1,6 @@
 namespace Billing.Application.Pagamentos;
 
+/// <summary>A <c>external_reference</c> da preferência é o <see cref="OrdemServicoId"/> (retomada idempotente sem depender do Id do Pagamento).</summary>
 public sealed record CriarCobrancaRequest(Guid PagamentoId, Guid OrdemServicoId, string Descricao, decimal Valor);
 public sealed record CobrancaCriadaResult(string PreferenceId, string LinkPagamento);
 public enum StatusPagamentoGateway { Pendente, Aprovado, Recusado, Estornado }

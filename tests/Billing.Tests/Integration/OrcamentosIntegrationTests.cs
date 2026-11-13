@@ -82,6 +82,42 @@ public class OrcamentosIntegrationTests : IClassFixture<BillingApiFactory>
     }
 
     [Fact]
+    public async Task Cliente_dono_le_orcamento_e_lista_por_OS_mas_outro_cliente_recebe_403()
+    {
+        var dono = Guid.NewGuid();
+        var o = await NovoAsync(dono);
+
+        (await Client("Cliente", dono).GetAsync($"/api/orcamentos/{o.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client("Cliente", dono).GetAsync($"/api/orcamentos?osId={o.OrdemServicoId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client("Cliente", Guid.NewGuid()).GetAsync($"/api/orcamentos/{o.Id}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await Client("Cliente", Guid.NewGuid()).GetAsync($"/api/orcamentos?osId={o.OrdemServicoId}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await Client("Gerente").GetAsync($"/api/orcamentos/{o.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client("Atendente").GetAsync($"/api/orcamentos?osId={o.OrdemServicoId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Pagamento_so_e_lido_pelo_cliente_dono_do_orcamento_e_pela_equipe()
+    {
+        var dono = Guid.NewGuid();
+        var o = await NovoAsync(dono);
+        var pag = Pagamento.Criar(o.OrdemServicoId, o.Id, 100m);
+        await _f.Pagamentos.InserirAsync(pag);
+
+        (await Client("Cliente", dono).GetAsync($"/api/pagamentos/{pag.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client("Cliente", Guid.NewGuid()).GetAsync($"/api/pagamentos/{pag.Id}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await Client("Gerente").GetAsync($"/api/pagamentos/{pag.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Pagamento_de_orcamento_inexistente_e_negado_ao_cliente()
+    {
+        var pag = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 100m);
+        await _f.Pagamentos.InserirAsync(pag);
+
+        (await Client("Cliente", Guid.NewGuid()).GetAsync($"/api/pagamentos/{pag.Id}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task Pagamento_consulta_200_e_404()
     {
         var pag = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 10m);

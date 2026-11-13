@@ -24,11 +24,19 @@ public sealed class OrcamentoUseCases
         _uow = uow;
     }
 
-    public async Task<OrcamentoResponse> ObterAsync(Guid id, CancellationToken ct = default)
-        => (await Carregar(id, ct)).ToResponse();
+    public async Task<OrcamentoResponse> ObterAsync(Guid id, Guid? clienteDoToken = null, CancellationToken ct = default)
+    {
+        var o = await Carregar(id, ct);
+        GarantirDono(o, clienteDoToken);
+        return o.ToResponse();
+    }
 
-    public async Task<IReadOnlyList<OrcamentoResponse>> ListarPorOsAsync(Guid osId, CancellationToken ct = default)
-        => (await _orcs.ListarPorOsAsync(osId, ct)).Select(o => o.ToResponse()).ToList();
+    public async Task<IReadOnlyList<OrcamentoResponse>> ListarPorOsAsync(Guid osId, Guid? clienteDoToken = null, CancellationToken ct = default)
+    {
+        var lista = await _orcs.ListarPorOsAsync(osId, ct);
+        foreach (var o in lista) GarantirDono(o, clienteDoToken);
+        return lista.Select(o => o.ToResponse()).ToList();
+    }
 
     public async Task<OrcamentoResponse> AprovarAsync(Guid id, Guid? clienteDoToken, CancellationToken ct = default)
     {
@@ -53,8 +61,18 @@ public sealed class OrcamentoUseCases
         return o.ToResponse();
     }
 
-    public async Task<PagamentoResponse> ObterPagamentoAsync(Guid id, CancellationToken ct = default)
-        => (await _pags.ObterPorIdAsync(id, ct) ?? throw new NotFoundException("Pagamento", id)).ToResponse();
+    public async Task<PagamentoResponse> ObterPagamentoAsync(Guid id, Guid? clienteDoToken = null, CancellationToken ct = default)
+    {
+        var p = await _pags.ObterPorIdAsync(id, ct) ?? throw new NotFoundException("Pagamento", id);
+        if (clienteDoToken is not null)
+        {
+            // O dono do pagamento é o dono do orçamento; sem orçamento resolvível, cliente não lê.
+            var o = await _orcs.ObterPorIdAsync(p.OrcamentoId, ct);
+            if (o is null) throw new ForbiddenException("Pagamento não pertence ao cliente autenticado.");
+            GarantirDono(o, clienteDoToken);
+        }
+        return p.ToResponse();
+    }
 
     private async Task<Orcamento> Carregar(Guid id, CancellationToken ct)
         => await _orcs.ObterPorIdAsync(id, ct) ?? throw new NotFoundException("Orçamento", id);

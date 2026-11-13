@@ -29,8 +29,9 @@ public sealed class WebhookMercadoPagoUseCase
     /// <summary>Também usado pelo modo Fake (sem webhook) logo após criar a cobrança.</summary>
     public async Task AplicarAsync(PagamentoInfo info, CancellationToken ct)
     {
-        if (!Guid.TryParse(info.ExternalReference, out var pagamentoId)) return;
-        var pag = await _repo.ObterPorIdAsync(pagamentoId, ct);
+        // external_reference da preferência = OrdemServicoId (há um pagamento por OS).
+        if (!Guid.TryParse(info.ExternalReference, out var osId)) return;
+        var pag = await _repo.ObterPorOsAsync(osId, ct);
         if (pag is null || pag.Status != StatusPagamento.Pendente) return; // desconhecido ou já processado
 
         switch (info.Status)

@@ -38,7 +38,7 @@ public sealed class EstornarPagamentoConsumer : IConsumer<EstornarPagamento>
 
         if (pag.Status == StatusPagamento.Pendente)
         {
-            var info = await _gw.BuscarPorReferenciaAsync(pag.Id.ToString(), ct);
+            var info = await _gw.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), ct);
             if (info is not { Status: StatusPagamentoGateway.Aprovado })
             {
                 // Nunca foi pago: nada a estornar.

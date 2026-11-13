@@ -43,23 +43,17 @@ public sealed class CriarCobrancaConsumer : IConsumer<CriarCobranca>
         if (pag is null)
         {
             pag = Pagamento.Criar(m.OrdemServicoId, m.OrcamentoId, m.Valor);
-            try
-            {
-                // Insere antes de cobrar: o índice único por OS impede que entregas concorrentes criem duas preferências no gateway.
-                await _repo.InserirAsync(pag, ct);
-            }
-            catch (DuplicidadeException)
-            {
-                _log.LogInformation("CriarCobranca ignorado: OS {OrdemServicoId} já tem pagamento de outra entrega concorrente", m.OrdemServicoId);
-                return;
-            }
+            // Insere antes de cobrar: o índice único por OS impede que entregas concorrentes criem duas preferências no gateway.
+            // DuplicidadeException propaga de propósito: um E11000 aborta a transação Mongo, então o retry do MassTransit
+            // reprocessa a mensagem e ela cai no caminho idempotente (pagamento já existente).
+            await _repo.InserirAsync(pag, ct);
             await EmitirCobranca(pag, ct);
-            await _repo.AtualizarAsync(pag, ct);
+            if (!await GravarAsync(pag, ct)) return;
         }
         else if (pag.PreferenceId is null && pag.Status == StatusPagamento.Pendente)
         {
             await EmitirCobranca(pag, ct);
-            await _repo.AtualizarAsync(pag, ct);
+            if (!await GravarAsync(pag, ct)) return;
         }
 
         await context.Publish(new CobrancaCriada(m.OrdemServicoId, DateTime.UtcNow, pag.Id, pag.LinkPagamento ?? ""), ct);
@@ -67,11 +61,26 @@ public sealed class CriarCobrancaConsumer : IConsumer<CriarCobranca>
         // Modo Fake: não há webhook — confirma consultando o gateway em memória.
         if (_modo.Fake && pag.Status == StatusPagamento.Pendente)
         {
-            var info = await _gw.BuscarPorReferenciaAsync(pag.Id.ToString(), ct);
+            var info = await _gw.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), ct);
             if (info is not null) await _webhook.AplicarAsync(info, ct);
         }
 
         await _uow.CommitAsync(ct);
+    }
+
+    /// <summary>Gravação otimista: perdeu a corrida para outro processamento (webhook, reentrega) = já processado, sem republicar.</summary>
+    private async Task<bool> GravarAsync(Pagamento pag, CancellationToken ct)
+    {
+        try
+        {
+            await _repo.AtualizarAsync(pag, ct);
+            return true;
+        }
+        catch (ConcorrenciaException)
+        {
+            _log.LogInformation("CriarCobranca ignorado: pagamento {PagamentoId} da OS {OrdemServicoId} foi alterado por outro processamento", pag.Id, pag.OrdemServicoId);
+            return false;
+        }
     }
 
     private async Task EmitirCobranca(Pagamento pag, CancellationToken ct)

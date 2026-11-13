@@ -40,8 +40,9 @@ public class MercadoPagoGatewayTests
     {
         var (gw, h) = Criar(_ => Json(new { id = "pref-123", init_point = "https://mp/prod", sandbox_init_point = "https://mp/sandbox" }, HttpStatusCode.Created));
         var pid = Guid.NewGuid();
+        var os = Guid.NewGuid();
 
-        var r = await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, Guid.NewGuid(), "OS 1", 151m), CancellationToken.None);
+        var r = await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, os, "OS 1", 151m), CancellationToken.None);
 
         r.PreferenceId.Should().Be("pref-123");
         r.LinkPagamento.Should().Be("https://mp/sandbox");
@@ -49,9 +50,9 @@ public class MercadoPagoGatewayTests
         req.Method.Should().Be(HttpMethod.Post);
         req.RequestUri!.AbsolutePath.Should().Be("/checkout/preferences");
         req.Headers.Authorization!.ToString().Should().Be("Bearer TEST-token");
-        req.Headers.GetValues("X-Idempotency-Key").Single().Should().Be(pid.ToString());
+        req.Headers.GetValues("X-Idempotency-Key").Single().Should().Be($"pref-{os}");
         using var body = JsonDocument.Parse(h.Bodies.Single());
-        body.RootElement.GetProperty("external_reference").GetString().Should().Be(pid.ToString());
+        body.RootElement.GetProperty("external_reference").GetString().Should().Be(os.ToString());
         body.RootElement.GetProperty("notification_url").GetString().Should().Be("https://pub.example/webhooks/mercadopago");
         body.RootElement.GetProperty("items")[0].GetProperty("unit_price").GetDecimal().Should().Be(151m);
     }

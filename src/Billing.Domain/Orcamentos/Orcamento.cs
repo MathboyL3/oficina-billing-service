@@ -55,6 +55,9 @@ public sealed class Orcamento
     /// <summary>Chamado pelo repositório a cada gravação bem-sucedida.</summary>
     public void AvancarVersao() => Versao++;
 
+    /// <summary>Desfaz <see cref="AvancarVersao"/> quando a gravação falha.</summary>
+    public void ReverterVersao() => Versao--;
+
     public void Cancelar()
     {
         if (Status == StatusOrcamento.Cancelado) return;

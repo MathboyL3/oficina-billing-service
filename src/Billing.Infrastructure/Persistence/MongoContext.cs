@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using Microsoft.Extensions.Options;
@@ -10,7 +9,6 @@ namespace Billing.Infrastructure.Persistence;
 /// Acesso às coleções do billing. Cria os índices no construtor (<c>CreateOne</c> é idempotente):
 /// um orçamento e um pagamento por OS — a unicidade barra a reentrega concorrente que passou da checagem de existência.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public sealed class MongoContext
 {
     public IMongoDatabase Database { get; }

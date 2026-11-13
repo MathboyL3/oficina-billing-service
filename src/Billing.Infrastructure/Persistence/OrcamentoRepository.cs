@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Billing.Application.Common;
 using Billing.Domain.Orcamentos;
 using MongoDB.Driver;
@@ -10,7 +9,6 @@ namespace Billing.Infrastructure.Persistence;
 /// e a mensagem publicada caiam na mesma transação e as leituras enxerguem o que ela já gravou.
 /// <see cref="AtualizarAsync"/> é otimista: só grava se a <c>Versao</c> lida ainda for a do documento.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public sealed class OrcamentoRepository : IOrcamentoRepository
 {
     private readonly MongoContext _db;
@@ -51,12 +49,21 @@ public sealed class OrcamentoRepository : IOrcamentoRepository
     public async Task AtualizarAsync(Orcamento o, CancellationToken ct = default)
     {
         var lida = o.Versao;
-        o.AvancarVersao();
         var s = await _sessao.ParaEscritaAsync(ct);
         var opcoes = new ReplaceOptions { IsUpsert = false };
-        var r = s is not null
-            ? await _db.Orcamentos.ReplaceOneAsync(s, x => x.Id == o.Id && x.Versao == lida, o, opcoes, ct)
-            : await _db.Orcamentos.ReplaceOneAsync(x => x.Id == o.Id && x.Versao == lida, o, opcoes, ct);
-        if (r.MatchedCount == 0) throw new ConcorrenciaException("Orçamento", o.Id);
+        // A versão avança antes do replace (o documento gravado já leva a nova) e é desfeita se a gravação não acontecer.
+        o.AvancarVersao();
+        try
+        {
+            var r = s is not null
+                ? await _db.Orcamentos.ReplaceOneAsync(s, x => x.Id == o.Id && x.Versao == lida, o, opcoes, ct)
+                : await _db.Orcamentos.ReplaceOneAsync(x => x.Id == o.Id && x.Versao == lida, o, opcoes, ct);
+            if (r.MatchedCount == 0) throw new ConcorrenciaException("Orçamento", o.Id);
+        }
+        catch
+        {
+            o.ReverterVersao();
+            throw;
+        }
     }
 }

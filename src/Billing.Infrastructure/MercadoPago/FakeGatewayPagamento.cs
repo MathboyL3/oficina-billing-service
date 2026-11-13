@@ -17,7 +17,7 @@ public sealed class FakeGatewayPagamento : IGatewayPagamento
 
     public Task<CobrancaCriadaResult> CriarCobrancaAsync(CriarCobrancaRequest r, CancellationToken ct)
     {
-        var referencia = r.PagamentoId.ToString();
+        var referencia = r.OrdemServicoId.ToString();
         var status = _opt.FakeComportamento == "Recusar" ? StatusPagamentoGateway.Recusado : StatusPagamentoGateway.Aprovado;
         PorReferencia[referencia] = new PagamentoInfo($"fake-{r.PagamentoId:N}", status, referencia, status.ToString());
         return Task.FromResult(new CobrancaCriadaResult($"fake-pref-{r.PagamentoId}", $"{_opt.PublicBaseUrl.TrimEnd('/')}/fake-checkout/{r.PagamentoId}"));

@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Billing.Application.Common;
 using Billing.Domain.Pagamentos;
 using MongoDB.Driver;
@@ -6,7 +5,6 @@ using MongoDB.Driver;
 namespace Billing.Infrastructure.Persistence;
 
 /// <summary>Mesma estratégia de sessão e de controle otimista (<c>Versao</c>) do <see cref="OrcamentoRepository"/>.</summary>
-[ExcludeFromCodeCoverage]
 public sealed class PagamentoRepository : IPagamentoRepository
 {
     private readonly MongoContext _db;
@@ -44,12 +42,21 @@ public sealed class PagamentoRepository : IPagamentoRepository
     public async Task AtualizarAsync(Pagamento p, CancellationToken ct = default)
     {
         var lida = p.Versao;
-        p.AvancarVersao();
         var s = await _sessao.ParaEscritaAsync(ct);
         var opcoes = new ReplaceOptions { IsUpsert = false };
-        var r = s is not null
-            ? await _db.Pagamentos.ReplaceOneAsync(s, x => x.Id == p.Id && x.Versao == lida, p, opcoes, ct)
-            : await _db.Pagamentos.ReplaceOneAsync(x => x.Id == p.Id && x.Versao == lida, p, opcoes, ct);
-        if (r.MatchedCount == 0) throw new ConcorrenciaException("Pagamento", p.Id);
+        // A versão avança antes do replace (o documento gravado já leva a nova) e é desfeita se a gravação não acontecer.
+        p.AvancarVersao();
+        try
+        {
+            var r = s is not null
+                ? await _db.Pagamentos.ReplaceOneAsync(s, x => x.Id == p.Id && x.Versao == lida, p, opcoes, ct)
+                : await _db.Pagamentos.ReplaceOneAsync(x => x.Id == p.Id && x.Versao == lida, p, opcoes, ct);
+            if (r.MatchedCount == 0) throw new ConcorrenciaException("Pagamento", p.Id);
+        }
+        catch
+        {
+            p.ReverterVersao();
+            throw;
+        }
     }
 }

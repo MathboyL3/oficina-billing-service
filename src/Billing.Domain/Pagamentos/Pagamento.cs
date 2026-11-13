@@ -81,6 +81,9 @@ public sealed class Pagamento
     /// <summary>Chamado pelo repositório a cada gravação bem-sucedida.</summary>
     public void AvancarVersao() => Versao++;
 
+    /// <summary>Desfaz <see cref="AvancarVersao"/> quando a gravação falha.</summary>
+    public void ReverterVersao() => Versao--;
+
     private void Exigir(StatusPagamento de)
     {
         if (Status != de) throw new DomainException($"Pagamento no status {Status}, esperado {de}.");

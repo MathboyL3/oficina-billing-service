@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using MongoDB.Bson;
@@ -8,7 +7,6 @@ using MongoDB.Bson.Serialization.Serializers;
 
 namespace Billing.Infrastructure.Persistence;
 
-[ExcludeFromCodeCoverage]
 public static class MongoMapeamentos
 {
     private static int _registrado;

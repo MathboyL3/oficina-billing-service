@@ -64,7 +64,7 @@ public class WebhookIntegrationTests : IClassFixture<BillingApiFactory>
         var pag = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), 50m);
         await _f.Pagamentos.InserirAsync(pag);
         _f.Gateway.Setup(g => g.ObterPagamentoAsync("104", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PagamentoInfo("104", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+            .ReturnsAsync(new PagamentoInfo("104", StatusPagamentoGateway.Aprovado, pag.OrdemServicoId.ToString(), "approved"));
 
         var r = await Postar("104", Assinar("104", "req-1"));
 
