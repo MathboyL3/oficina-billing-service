@@ -40,29 +40,20 @@ public class OrcamentoTests
     [Fact]
     public void Aprovar_considera_offset_de_data_local()
     {
+        // Datas Kind=Local sao convertidas para UTC antes de comparar com ValidoAte. Os dois instantes
+        // ficam a apenas 1 min do vencimento, mas os ticks "locais" sao deslocados pelo offset do fuso:
+        // a comparacao crua dos ticks (sem ToUniversalTime) erra um dos dois casos em qualquer fuso != UTC
+        // (a leste, aceita o vencido; a oeste, recusa o valido). Em maquina UTC o offset e 0 e a
+        // normalizacao e a identidade, entao a regressao e inobservavel ali por definicao.
         var o = Novo(TimeSpan.FromHours(1));
-        // Mesmo instante de ValidoAte + 1h, mas expresso no fuso da máquina (Kind = Local):
-        // comparar os ticks crus aceitaria um orçamento já vencido em fuso a oeste de UTC.
-        var expiradoLocal = DateTime.SpecifyKind(
-            o.ValidoAte.AddHours(1).Add(TimeZoneInfo.Local.GetUtcOffset(o.ValidoAte)), DateTimeKind.Local);
+        var vencidoLocal = DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(1), TimeZoneInfo.Local), DateTimeKind.Local);
+        var validoLocal = DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(-1), TimeZoneInfo.Local), DateTimeKind.Local);
 
-        FluentActions.Invoking(() => o.Aprovar(expiradoLocal)).Should().Throw<DomainException>()
-            .WithMessage("Orçamento expirado.");
-    }
-
-    [Fact]
-    public void Aprovar_local_ainda_valido_nao_expira_por_causa_do_offset()
-    {
-        var o = Novo(TimeSpan.FromHours(1));
-        // 30 min antes do vencimento (UTC), expresso como Local: em fuso a leste de UTC, ticks crus dariam "expirado".
-        var local = DateTime.SpecifyKind(
-            TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(-30), TimeZoneInfo.Local), DateTimeKind.Local);
-
-        o.Aprovar(local);
+        FluentActions.Invoking(() => o.Aprovar(vencidoLocal)).Should().Throw<DomainException>().WithMessage("Or*expirado.");
+        o.Aprovar(validoLocal);
 
         o.Status.Should().Be(StatusOrcamento.Aprovado);
     }
-
     [Fact]
     public void Aprovar_dentro_da_validade_muda_status()
     {

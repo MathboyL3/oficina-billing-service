@@ -50,4 +50,12 @@ public class FakeGatewayPagamentoTests
         (await Gw("FalharEstorno").EstornarAsync("qualquer", null, default)).Sucesso.Should().BeFalse();
         (await Gw("Aprovar").BuscarPorReferenciaAsync(Guid.NewGuid().ToString(), default)).Should().BeNull();
     }
-}
+
+    [Fact]
+    public async Task Estorno_de_pagamento_desconhecido_retorna_404_como_o_real()
+    {
+        var r = await Gw("Aprovar").EstornarAsync("nao-existe", null, default);
+
+        r.Sucesso.Should().BeFalse();
+        r.Erro.Should().Be("404: pagamento não encontrado");
+    }}

@@ -38,8 +38,9 @@ public sealed class FakeGatewayPagamento : IGatewayPagamento
         if (_opt.FakeComportamento == "FalharEstorno")
             return Task.FromResult(new EstornoResult(false, "Falha simulada de estorno."));
         var par = PorReferencia.FirstOrDefault(kv => kv.Value.PaymentId == paymentId);
-        if (par.Key is not null)
-            PorReferencia[par.Key] = par.Value with { Status = StatusPagamentoGateway.Estornado, StatusBruto = "refunded" };
+        if (par.Key is null)
+            return Task.FromResult(new EstornoResult(false, "404: pagamento não encontrado"));
+        PorReferencia[par.Key] = par.Value with { Status = StatusPagamentoGateway.Estornado, StatusBruto = "refunded" };
         return Task.FromResult(new EstornoResult(true, null));
     }
 }
