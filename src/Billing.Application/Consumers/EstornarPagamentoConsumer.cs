@@ -2,6 +2,7 @@
 using Billing.Domain.Common;
 using Billing.Domain.Pagamentos;
 using MassTransit;
+using Microsoft.Extensions.Logging;
 using Oficina.Contracts;
 
 namespace Billing.Application.Consumers;
@@ -12,9 +13,11 @@ public sealed class EstornarPagamentoConsumer : IConsumer<EstornarPagamento>
     private readonly IPagamentoRepository _repo;
     private readonly IGatewayPagamento _gw;
     private readonly IUnitOfWork _uow;
+    private readonly ILogger<EstornarPagamentoConsumer> _log;
 
-    public EstornarPagamentoConsumer(IPagamentoRepository repo, IGatewayPagamento gw, IUnitOfWork uow)
+    public EstornarPagamentoConsumer(IPagamentoRepository repo, IGatewayPagamento gw, IUnitOfWork uow, ILogger<EstornarPagamentoConsumer> log)
     {
+        _log = log;
         _repo = repo;
         _gw = gw;
         _uow = uow;
@@ -28,6 +31,7 @@ public sealed class EstornarPagamentoConsumer : IConsumer<EstornarPagamento>
 
         if (pag is null || pag.Status is StatusPagamento.Estornado or StatusPagamento.Recusado)
         {
+            _log.LogInformation("EstornarPagamento idempotente: pagamento {PagamentoId} {Situacao}", m.PagamentoId, pag?.Status.ToString() ?? "inexistente");
             await Confirmar(context, m.OrdemServicoId, m.PagamentoId, ct);
             return;
         }

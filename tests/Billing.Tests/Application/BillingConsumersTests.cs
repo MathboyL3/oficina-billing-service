@@ -1,4 +1,5 @@
 ﻿using Billing.Application;
+using Billing.Application.Common;
 using Billing.Application.Consumers;
 using Billing.Application.Pagamentos;
 using Billing.Application.UseCases;
@@ -7,6 +8,7 @@ using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using FluentAssertions;
 using MassTransit;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Oficina.Contracts;
@@ -41,9 +43,9 @@ public class BillingConsumersTests
 
     private GerarOrcamentoConsumer Gerar() => new(_orcs.Object, _uow.Object, Options.Create(new BillingOptions()), Microsoft.Extensions.Logging.Abstractions.NullLogger<GerarOrcamentoConsumer>.Instance);
     private CriarCobrancaConsumer Cobrar(string modo) =>
-        new(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, new Mock<IPublishEndpoint>().Object), _uow.Object, Options.Create(new ModoPagamento { Modo = modo }));
-    private CancelarOrcamentoConsumer Cancelar() => new(_orcs.Object, _pags.Object, _gw.Object, _uow.Object);
-    private EstornarPagamentoConsumer Estornar() => new(_pags.Object, _gw.Object, _uow.Object);
+        new(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, new Mock<IPublishEndpoint>().Object), _uow.Object, Options.Create(new ModoPagamento { Modo = modo }), NullLogger<CriarCobrancaConsumer>.Instance);
+    private CancelarOrcamentoConsumer Cancelar() => new(_orcs.Object, _pags.Object, _gw.Object, _uow.Object, NullLogger<CancelarOrcamentoConsumer>.Instance);
+    private EstornarPagamentoConsumer Estornar() => new(_pags.Object, _gw.Object, _uow.Object, NullLogger<EstornarPagamentoConsumer>.Instance);
 
     [Fact]
     public async Task GerarOrcamento_cria_e_publica_OrcamentoGerado()
@@ -56,6 +58,17 @@ public class BillingConsumersTests
 
         _orcs.Verify(r => r.InserirAsync(It.Is<Orcamento>(o => o.ValorTotal == 20m && o.OrdemServicoId == os), It.IsAny<CancellationToken>()), Times.Once);
         _ordem.Should().Equal("OrcamentoGerado", "commit");
+    }
+
+    [Fact]
+    public async Task GerarOrcamento_reentrega_concorrente_no_indice_unico_nao_falha_nem_publica()
+    {
+        _orcs.Setup(r => r.InserirAsync(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>())).ThrowsAsync(new DuplicidadeException("orcamentos.OrdemServicoId"));
+        var ctx = Ctx(new GerarOrcamento(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), new[] { new ItemOrcamento("Peca", Guid.NewGuid(), "p", 5m, 2) }, 10m));
+
+        await Gerar().Consume(ctx.Object);
+
+        _ordem.Should().BeEmpty();
     }
 
     [Fact]
@@ -184,6 +197,17 @@ public class BillingConsumersTests
     }
 
     [Fact]
+    public async Task CriarCobranca_reentrega_concorrente_no_indice_unico_nao_cobra_nem_publica()
+    {
+        _pags.Setup(r => r.InserirAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>())).ThrowsAsync(new DuplicidadeException("pagamentos.OrdemServicoId"));
+
+        await Cobrar("Real").Consume(Ctx(new CriarCobranca(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), 10m)).Object);
+
+        _gw.Verify(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _ordem.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CriarCobranca_reentregue_com_preferencia_nao_chama_gateway_e_republica()
     {
         var os = Guid.NewGuid();
@@ -211,7 +235,7 @@ public class BillingConsumersTests
             .ReturnsAsync((string r, CancellationToken _) => new PagamentoInfo("9", StatusPagamentoGateway.Aprovado, r, "approved"));
         var bus = new Mock<IPublishEndpoint>();
         bus.Setup(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>())).Callback(() => _ordem.Add("PagamentoConfirmado")).Returns(Task.CompletedTask);
-        var c = new CriarCobrancaConsumer(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, bus.Object), _uow.Object, Options.Create(new ModoPagamento { Modo = "Fake" }));
+        var c = new CriarCobrancaConsumer(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, bus.Object), _uow.Object, Options.Create(new ModoPagamento { Modo = "Fake" }), NullLogger<CriarCobrancaConsumer>.Instance);
 
         await c.Consume(Ctx(new CriarCobranca(os, DateTime.UtcNow, Guid.NewGuid(), 10m)).Object);
 

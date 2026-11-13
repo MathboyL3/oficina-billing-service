@@ -1,8 +1,10 @@
-﻿using Billing.Application.Pagamentos;
+﻿using Billing.Application.Common;
+using Billing.Application.Pagamentos;
 using Billing.Application.UseCases;
 using Billing.Domain.Common;
 using Billing.Domain.Pagamentos;
 using MassTransit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Oficina.Contracts;
 
@@ -19,10 +21,12 @@ public sealed class CriarCobrancaConsumer : IConsumer<CriarCobranca>
     private readonly WebhookMercadoPagoUseCase _webhook;
     private readonly IUnitOfWork _uow;
     private readonly ModoPagamento _modo;
+    private readonly ILogger<CriarCobrancaConsumer> _log;
 
     public CriarCobrancaConsumer(IPagamentoRepository repo, IGatewayPagamento gw, WebhookMercadoPagoUseCase webhook,
-        IUnitOfWork uow, IOptions<ModoPagamento> modo)
+        IUnitOfWork uow, IOptions<ModoPagamento> modo, ILogger<CriarCobrancaConsumer> log)
     {
+        _log = log;
         _repo = repo;
         _gw = gw;
         _webhook = webhook;
@@ -39,8 +43,18 @@ public sealed class CriarCobrancaConsumer : IConsumer<CriarCobranca>
         if (pag is null)
         {
             pag = Pagamento.Criar(m.OrdemServicoId, m.OrcamentoId, m.Valor);
+            try
+            {
+                // Insere antes de cobrar: o índice único por OS impede que entregas concorrentes criem duas preferências no gateway.
+                await _repo.InserirAsync(pag, ct);
+            }
+            catch (DuplicidadeException)
+            {
+                _log.LogInformation("CriarCobranca ignorado: OS {OrdemServicoId} já tem pagamento de outra entrega concorrente", m.OrdemServicoId);
+                return;
+            }
             await EmitirCobranca(pag, ct);
-            await _repo.InserirAsync(pag, ct);
+            await _repo.AtualizarAsync(pag, ct);
         }
         else if (pag.PreferenceId is null && pag.Status == StatusPagamento.Pendente)
         {

@@ -1,3 +1,4 @@
+using Billing.Application.Common;
 using Billing.Application.Pagamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
@@ -36,14 +37,28 @@ public sealed class WebhookMercadoPagoUseCase
         {
             case StatusPagamentoGateway.Aprovado:
                 pag.Aprovar(info.PaymentId);
-                await _repo.AtualizarAsync(pag, ct);
+                if (!await GravarAsync(pag, ct)) return;
                 await _bus.Publish(new PagamentoConfirmado(pag.OrdemServicoId, DateTime.UtcNow, pag.Id), ct);
                 break;
             case StatusPagamentoGateway.Recusado:
                 pag.Recusar(info.PaymentId);
-                await _repo.AtualizarAsync(pag, ct);
+                if (!await GravarAsync(pag, ct)) return;
                 await _bus.Publish(new PagamentoRecusado(pag.OrdemServicoId, DateTime.UtcNow, pag.Id, info.StatusBruto), ct);
                 break;
+        }
+    }
+
+    /// <summary>Gravação otimista: se outro processamento (webhook x modo Fake x reentrega) ganhou, conta como já processado.</summary>
+    private async Task<bool> GravarAsync(Pagamento pag, CancellationToken ct)
+    {
+        try
+        {
+            await _repo.AtualizarAsync(pag, ct);
+            return true;
+        }
+        catch (ConcorrenciaException)
+        {
+            return false;
         }
     }
 }

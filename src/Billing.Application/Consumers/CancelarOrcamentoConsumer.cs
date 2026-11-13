@@ -3,6 +3,7 @@ using Billing.Domain.Common;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
+using Microsoft.Extensions.Logging;
 using Oficina.Contracts;
 
 namespace Billing.Application.Consumers;
@@ -17,9 +18,12 @@ public sealed class CancelarOrcamentoConsumer : IConsumer<CancelarOrcamento>
     private readonly IPagamentoRepository _pags;
     private readonly IGatewayPagamento _gw;
     private readonly IUnitOfWork _uow;
+    private readonly ILogger<CancelarOrcamentoConsumer> _log;
 
-    public CancelarOrcamentoConsumer(IOrcamentoRepository orcs, IPagamentoRepository pags, IGatewayPagamento gw, IUnitOfWork uow)
+    public CancelarOrcamentoConsumer(IOrcamentoRepository orcs, IPagamentoRepository pags, IGatewayPagamento gw, IUnitOfWork uow,
+        ILogger<CancelarOrcamentoConsumer> log)
     {
+        _log = log;
         _orcs = orcs;
         _pags = pags;
         _gw = gw;
@@ -37,6 +41,7 @@ public sealed class CancelarOrcamentoConsumer : IConsumer<CancelarOrcamento>
             var info = await _gw.BuscarPorReferenciaAsync(pag.Id.ToString(), ct);
             if (info is { Status: StatusPagamentoGateway.Aprovado })
             {
+                _log.LogInformation("Cancelamento da OS {OrdemServicoId} encontrou pagamento aprovado no MP: estornando", m.OrdemServicoId);
                 pag.Aprovar(info.PaymentId);
                 await EstornoPagamento.EstornarEPublicarAsync(context, _pags, _gw, pag, ct);
             }

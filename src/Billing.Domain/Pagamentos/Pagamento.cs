@@ -13,6 +13,8 @@ public sealed class Pagamento
     public string? LinkPagamento { get; private set; }
     public string? PaymentIdMp { get; private set; }
     public DateTime AtualizadoEm { get; private set; }
+    /// <summary>Controle otimista: a persistência só grava se a versão lida ainda for a atual.</summary>
+    public int Versao { get; private set; }
 
     public bool EstaFinal => Status is StatusPagamento.Recusado or StatusPagamento.Estornado;
 
@@ -75,6 +77,9 @@ public sealed class Pagamento
         Status = StatusPagamento.Estornado;
         Tocar();
     }
+
+    /// <summary>Chamado pelo repositório a cada gravação bem-sucedida.</summary>
+    public void AvancarVersao() => Versao++;
 
     private void Exigir(StatusPagamento de)
     {

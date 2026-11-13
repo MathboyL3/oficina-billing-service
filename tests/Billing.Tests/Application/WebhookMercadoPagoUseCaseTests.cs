@@ -1,3 +1,4 @@
+using Billing.Application.Common;
 using Billing.Application.Pagamentos;
 using Billing.Application.UseCases;
 using Billing.Domain.Pagamentos;
@@ -32,6 +33,32 @@ public class WebhookMercadoPagoUseCaseTests
         p.Status.Should().Be(StatusPagamento.Aprovado);
         _repo.Verify(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>()), Times.Once);
         _bus.Verify(b => b.Publish(It.Is<PagamentoConfirmado>(m => m.PagamentoId == p.Id && m.OrdemServicoId == p.OrdemServicoId), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Concorrencia_na_gravacao_conta_como_ja_processado_e_nao_publica()
+    {
+        var p = Pendente();
+        _gw.Setup(g => g.ObterPagamentoAsync("79", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("79", StatusPagamentoGateway.Aprovado, p.Id.ToString(), "approved"));
+        _repo.Setup(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", p.Id));
+
+        await Uc().ProcessarAsync("79", default);
+
+        _bus.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Concorrencia_na_recusa_tambem_nao_publica()
+    {
+        var p = Pendente();
+        _gw.Setup(g => g.ObterPagamentoAsync("80", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("80", StatusPagamentoGateway.Recusado, p.Id.ToString(), "rejected"));
+        _repo.Setup(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>())).ThrowsAsync(new ConcorrenciaException("Pagamento", p.Id));
+
+        await Uc().ProcessarAsync("80", default);
+
+        _bus.VerifyNoOtherCalls();
     }
 
     [Fact]

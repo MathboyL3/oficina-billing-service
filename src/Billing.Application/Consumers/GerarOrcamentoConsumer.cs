@@ -1,4 +1,5 @@
-﻿using Billing.Domain.Common;
+﻿using Billing.Application.Common;
+using Billing.Domain.Common;
 using Billing.Domain.Orcamentos;
 using MassTransit;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,12 @@ public sealed class GerarOrcamentoConsumer : IConsumer<GerarOrcamento>
             var orc = Orcamento.Gerar(m.OrdemServicoId, m.ClienteId, itens, _opt.ValidadeOrcamento);
             await _repo.InserirAsync(orc, ct);
             await context.Publish(new OrcamentoGerado(m.OrdemServicoId, DateTime.UtcNow, orc.Id, orc.ValorTotal, orc.ValidoAte), ct);
+        }
+        catch (DuplicidadeException)
+        {
+            // Entrega concorrente já gerou o orçamento (índice único por OS): a outra entrega publica e confirma.
+            _log.LogInformation("GerarOrcamento ignorado: OS {OrdemServicoId} já recebeu orçamento de outra entrega concorrente", m.OrdemServicoId);
+            return;
         }
         catch (DomainException ex)
         {

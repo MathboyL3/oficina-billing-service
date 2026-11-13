@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Billing.Application.Common;
 using Billing.Domain.Common;
+using Billing.Infrastructure.Persistence;
 
 namespace Billing.Api.Middleware;
 
@@ -40,6 +41,10 @@ public sealed class ErrorHandlingMiddleware
         catch (AppException ex)
         {
             await Write(ctx, StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (Exception ex) when (ex.EhChaveDuplicada())
+        {
+            await Write(ctx, StatusCodes.Status409Conflict, "Registro duplicado: já existe um item para esta OS.");
         }
         catch (Exception ex)
         {

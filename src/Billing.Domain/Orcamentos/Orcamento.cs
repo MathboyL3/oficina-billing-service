@@ -13,6 +13,8 @@ public sealed class Orcamento
     public DateTime CriadoEm { get; private set; }
     public DateTime ValidoAte { get; private set; }
     public string? MotivoRecusa { get; private set; }
+    /// <summary>Controle otimista: a persistência só grava se a versão lida ainda for a atual.</summary>
+    public int Versao { get; private set; }
 
     private Orcamento() { }
 
@@ -49,6 +51,9 @@ public sealed class Orcamento
         Status = StatusOrcamento.Recusado;
         MotivoRecusa = motivo;
     }
+
+    /// <summary>Chamado pelo repositório a cada gravação bem-sucedida.</summary>
+    public void AvancarVersao() => Versao++;
 
     public void Cancelar()
     {
