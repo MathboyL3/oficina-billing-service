@@ -39,7 +39,7 @@ public class BillingConsumersTests
     private static Orcamento NovoOrc(Guid os) =>
         Orcamento.Gerar(os, Guid.NewGuid(), new[] { new ItemOrcamentoDominio("Servico", Guid.NewGuid(), "x", 10m, 1) }, TimeSpan.FromHours(1));
 
-    private GerarOrcamentoConsumer Gerar() => new(_orcs.Object, _uow.Object, Options.Create(new BillingOptions()));
+    private GerarOrcamentoConsumer Gerar() => new(_orcs.Object, _uow.Object, Options.Create(new BillingOptions()), Microsoft.Extensions.Logging.Abstractions.NullLogger<GerarOrcamentoConsumer>.Instance);
     private CriarCobrancaConsumer Cobrar(string modo) =>
         new(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, new Mock<IPublishEndpoint>().Object), _uow.Object, Options.Create(new ModoPagamento { Modo = modo }));
     private CancelarOrcamentoConsumer Cancelar() => new(_orcs.Object, _pags.Object, _gw.Object, _uow.Object);
@@ -88,6 +88,83 @@ public class BillingConsumersTests
         _ordem.Should().Equal("GeracaoOrcamentoFalhou", "commit");
     }
 
+    [Fact]
+    public async Task GerarOrcamento_reentrega_com_orcamento_nao_pendente_nao_gera_nem_publica()
+    {
+        var os = Guid.NewGuid();
+        var orc = NovoOrc(os);
+        orc.Cancelar();
+        _orcs.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(orc);
+
+        await Gerar().Consume(Ctx(new GerarOrcamento(os, DateTime.UtcNow, Guid.NewGuid(), new[] { new ItemOrcamento("Peca", Guid.NewGuid(), "p", 5m, 2) }, 10m)).Object);
+
+        _orcs.Verify(r => r.InserirAsync(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Never);
+        _ordem.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GerarOrcamento_item_sem_descricao_publica_falha_sem_inserir()
+    {
+        var ctx = Ctx(new GerarOrcamento(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), new[] { new ItemOrcamento("Peca", Guid.NewGuid(), " ", 5m, 1) }, 5m));
+        await Gerar().Consume(ctx.Object);
+        _orcs.Verify(r => r.InserirAsync(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Never);
+        ctx.Verify(c => c.Publish(It.Is<GeracaoOrcamentoFalhou>(m => m.Motivo.Contains("descrição")), It.IsAny<CancellationToken>()), Times.Once);
+        _ordem.Should().Equal("GeracaoOrcamentoFalhou", "commit");
+    }
+
+    [Fact]
+    public async Task CancelarOrcamento_pagamento_Aprovado_no_banco_estorna_antes_de_cancelar()
+    {
+        var os = Guid.NewGuid();
+        var orc = NovoOrc(os);
+        var pag = Pagamento.Criar(os, orc.Id, 10m);
+        pag.Aprovar("66");
+        _orcs.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(orc);
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
+        _gw.Setup(g => g.EstornarAsync("66", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
+
+        await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "x")).Object);
+
+        pag.Status.Should().Be(StatusPagamento.Estornado);
+        orc.Status.Should().Be(StatusOrcamento.Cancelado);
+        _ordem.Should().Equal("PagamentoEstornado", "OrcamentoCancelado", "commit");
+    }
+
+    [Fact]
+    public async Task CancelarOrcamento_pagamento_EstornoPendente_com_falha_publica_EstornoFalhou_e_ainda_cancela()
+    {
+        var os = Guid.NewGuid();
+        var orc = NovoOrc(os);
+        var pag = Pagamento.Criar(os, orc.Id, 10m);
+        pag.Aprovar("66");
+        pag.MarcarEstornoPendente();
+        _orcs.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(orc);
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
+        _gw.Setup(g => g.EstornarAsync("66", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "boom"));
+        _gw.Setup(g => g.ObterPagamentoAsync("66", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("66", StatusPagamentoGateway.Aprovado, pag.Id.ToString(), "approved"));
+
+        await Cancelar().Consume(Ctx(new CancelarOrcamento(os, DateTime.UtcNow, "x")).Object);
+
+        pag.Status.Should().Be(StatusPagamento.EstornoPendente);
+        orc.Status.Should().Be(StatusOrcamento.Cancelado);
+        _ordem.Should().Equal("EstornoFalhou", "OrcamentoCancelado", "commit");
+    }
+
+    [Fact]
+    public async Task Estornar_sem_PaymentIdMp_publica_EstornoFalhou_sem_chamar_gateway()
+    {
+        var os = Guid.NewGuid();
+        var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
+        pag.Aprovar(" ");
+        _pags.Setup(r => r.ObterPorIdAsync(pag.Id, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
+
+        await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);
+
+        _gw.VerifyNoOtherCalls();
+        pag.Status.Should().Be(StatusPagamento.EstornoPendente);
+        _ordem.Should().Equal("EstornoFalhou", "commit");
+    }
     [Fact]
     public async Task CriarCobranca_real_cria_pagamento_e_publica_CobrancaCriada_sem_confirmar()
     {

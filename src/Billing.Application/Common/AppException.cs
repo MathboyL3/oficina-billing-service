@@ -7,7 +7,7 @@ public class AppException : Exception
 
 public class NotFoundException : AppException
 {
-    public NotFoundException(string entidade, object id) : base($"{entidade} não encontrado(a). ID: {id}.") { }
+    public NotFoundException(string entidade, object id) : base($"{entidade} nÃ£o encontrado(a). ID: {id}.") { }
 }
 
 public class ConflictException : AppException

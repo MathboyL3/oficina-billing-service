@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Billing.Domain\Billing.Domain.csproj" />
@@ -17,4 +17,3 @@
   </PropertyGroup>
 
 </Project>
-

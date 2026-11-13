@@ -1,4 +1,4 @@
-﻿using Billing.Application.Pagamentos;
+using Billing.Application.Pagamentos;
 using Billing.Domain.Common;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
@@ -40,6 +40,10 @@ public sealed class CancelarOrcamentoConsumer : IConsumer<CancelarOrcamento>
                 pag.Aprovar(info.PaymentId);
                 await EstornoPagamento.EstornarEPublicarAsync(context, _pags, _gw, pag, ct);
             }
+        }
+        else if (pag is { Status: StatusPagamento.Aprovado or StatusPagamento.EstornoPendente })
+        {
+            await EstornoPagamento.EstornarEPublicarAsync(context, _pags, _gw, pag, ct);
         }
 
         var orc = await _orcs.ObterPorOsAsync(m.OrdemServicoId, ct);

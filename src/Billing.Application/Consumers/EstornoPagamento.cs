@@ -1,4 +1,4 @@
-﻿using Billing.Application.Pagamentos;
+using Billing.Application.Pagamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
 using Oficina.Contracts;
@@ -15,8 +15,11 @@ internal static class EstornoPagamento
     public static async Task EstornarEPublicarAsync(IPublishEndpoint bus, IPagamentoRepository repo, IGatewayPagamento gw,
         Pagamento pag, CancellationToken ct)
     {
-        var r = await gw.EstornarAsync(pag.PaymentIdMp!, null, ct);
-        var ok = r.Sucesso || await JaEstornadoNoMpAsync(gw, pag.PaymentIdMp!, ct);
+        var paymentId = pag.PaymentIdMp;
+        var r = string.IsNullOrWhiteSpace(paymentId)
+            ? new EstornoResult(false, "Pagamento sem identificador no gateway (PaymentIdMp ausente).")
+            : await gw.EstornarAsync(paymentId, null, ct);
+        var ok = r.Sucesso || (!string.IsNullOrWhiteSpace(paymentId) && await JaEstornadoNoMpAsync(gw, paymentId, ct));
         if (ok)
         {
             pag.MarcarEstornado();
@@ -44,4 +47,3 @@ internal static class EstornoPagamento
         }
     }
 }
-
