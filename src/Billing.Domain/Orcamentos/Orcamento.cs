@@ -35,18 +35,13 @@ public sealed class Orcamento
         };
     }
 
-    public void Aprovar(DateTime agora)
+    public void Aprovar(DateTimeOffset agora)
     {
         ExigirPendente();
-        // ValidoAte é UTC: um DateTime Kind=Local (ou Unspecified) precisa ser convertido antes,
-        // senão o offset do fuso entra na comparação de ticks.
-        var instante = agora.Kind == DateTimeKind.Local
-            ? agora.ToUniversalTime()
-            : DateTime.SpecifyKind(agora, DateTimeKind.Utc);
-        if (instante > ValidoAte) throw new DomainException("Orçamento expirado.");
+        // ValidoAte é UTC: compara pelo instante (UtcDateTime), nunca pelo relógio local do offset.
+        if (agora.UtcDateTime > ValidoAte) throw new DomainException("Orçamento expirado.");
         Status = StatusOrcamento.Aprovado;
     }
-
     public void Recusar(string motivo)
     {
         ExigirPendente();

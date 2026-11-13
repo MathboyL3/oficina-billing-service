@@ -12,7 +12,8 @@ public static class AssinaturaWebhook
     public static bool Valida(string? xSignature, string? xRequestId, string? dataId, string secret,
         TimeSpan? tolerancia = null, DateTimeOffset? agora = null)
     {
-        if (string.IsNullOrEmpty(secret) || string.IsNullOrWhiteSpace(xSignature) || string.IsNullOrWhiteSpace(dataId))
+        if (string.IsNullOrEmpty(secret) || string.IsNullOrWhiteSpace(xSignature) || string.IsNullOrWhiteSpace(dataId)
+            || string.IsNullOrWhiteSpace(xRequestId))
             return false;
 
         string? ts = null, v1 = null;
@@ -25,7 +26,12 @@ public static class AssinaturaWebhook
         }
         if (ts is null || v1 is null || !long.TryParse(ts, out var tsNum)) return false;
 
-        var instante = tsNum > 1_000_000_000_000 ? DateTimeOffset.FromUnixTimeMilliseconds(tsNum) : DateTimeOffset.FromUnixTimeSeconds(tsNum);
+        DateTimeOffset instante;
+        try
+        {
+            instante = tsNum > 1_000_000_000_000 ? DateTimeOffset.FromUnixTimeMilliseconds(tsNum) : DateTimeOffset.FromUnixTimeSeconds(tsNum);
+        }
+        catch (ArgumentOutOfRangeException) { return false; }
         if (((agora ?? DateTimeOffset.UtcNow) - instante).Duration() > (tolerancia ?? TimeSpan.FromMinutes(5)))
             return false;
 

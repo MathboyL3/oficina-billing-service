@@ -58,4 +58,5 @@ public class FakeGatewayPagamentoTests
 
         r.Sucesso.Should().BeFalse();
         r.Erro.Should().Be("404: pagamento não encontrado");
-    }}
+    }
+}

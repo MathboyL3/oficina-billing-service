@@ -37,20 +37,22 @@ public class OrcamentoTests
             .Should().Throw<DomainException>().WithMessage("Orçamento sem itens.");
     }
 
-    [Fact]
-    public void Aprovar_considera_offset_de_data_local()
-    {
-        // Datas Kind=Local sao convertidas para UTC antes de comparar com ValidoAte. Os dois instantes
-        // ficam a apenas 1 min do vencimento, mas os ticks "locais" sao deslocados pelo offset do fuso:
-        // a comparacao crua dos ticks (sem ToUniversalTime) erra um dos dois casos em qualquer fuso != UTC
-        // (a leste, aceita o vencido; a oeste, recusa o valido). Em maquina UTC o offset e 0 e a
-        // normalizacao e a identidade, entao a regressao e inobservavel ali por definicao.
-        var o = Novo(TimeSpan.FromHours(1));
-        var vencidoLocal = DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(1), TimeZoneInfo.Local), DateTimeKind.Local);
-        var validoLocal = DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(-1), TimeZoneInfo.Local), DateTimeKind.Local);
+    // Mesmo instante UTC expresso no offset dado (relogio de parede = UTC + offset).
+    private static DateTimeOffset Em(DateTime utc, TimeSpan offset)
+        => new(DateTime.SpecifyKind(utc + offset, DateTimeKind.Unspecified), offset);
 
-        FluentActions.Invoking(() => o.Aprovar(vencidoLocal)).Should().Throw<DomainException>().WithMessage("Or*expirado.");
-        o.Aprovar(validoLocal);
+    [Fact]
+    public void Aprovar_considera_offset_do_instante()
+    {
+        // Mesmos instantes (+-1 min do vencimento) expressos em UTC-3: comparar agora.DateTime
+        // (relogio local, sem converter) deslocaria 3h e aceitaria o vencido / recusaria o valido.
+        var o = Novo(TimeSpan.FromHours(1));
+        var offset = TimeSpan.FromHours(-3);
+        var vencido = Em(o.ValidoAte.AddMinutes(1), offset);
+        var valido = Em(o.ValidoAte.AddMinutes(-1), offset);
+
+        FluentActions.Invoking(() => o.Aprovar(vencido)).Should().Throw<DomainException>().WithMessage("Orçamento expirado.");
+        o.Aprovar(valido);
 
         o.Status.Should().Be(StatusOrcamento.Aprovado);
     }
@@ -58,7 +60,7 @@ public class OrcamentoTests
     public void Aprovar_dentro_da_validade_muda_status()
     {
         var o = Novo();
-        o.Aprovar(DateTime.UtcNow);
+        o.Aprovar(DateTimeOffset.UtcNow);
         o.Status.Should().Be(StatusOrcamento.Aprovado);
     }
 
@@ -66,10 +68,10 @@ public class OrcamentoTests
     public void Aprovar_expirado_lanca_e_recusado_nao_aprova()
     {
         var o = Novo(TimeSpan.FromHours(1));
-        FluentActions.Invoking(() => o.Aprovar(DateTime.UtcNow.AddHours(2))).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => o.Aprovar(DateTimeOffset.UtcNow.AddHours(2))).Should().Throw<DomainException>();
         o.Recusar("caro");
         o.Status.Should().Be(StatusOrcamento.Recusado);
-        FluentActions.Invoking(() => o.Aprovar(DateTime.UtcNow)).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => o.Aprovar(DateTimeOffset.UtcNow)).Should().Throw<DomainException>();
     }
 
     [Fact]

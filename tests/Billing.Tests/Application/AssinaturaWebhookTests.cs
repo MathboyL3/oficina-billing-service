@@ -23,6 +23,9 @@ public class AssinaturaWebhookTests
     [InlineData("lixo")]
     [InlineData("ts=abc,v1=00")]
     [InlineData("v1=deadbeef")]
+    [InlineData("ts=9999999999999999,v1=00")]
+    [InlineData("ts=-9999999999999,v1=00")]
+    [InlineData("ts=300000000000,v1=00")]
     public void Header_ausente_ou_malformado_recusa(string? header)
         => AssinaturaWebhook.Valida(header, "req-1", "123", Secret).Should().BeFalse();
 
@@ -51,5 +54,19 @@ public class AssinaturaWebhookTests
 
     [Fact]
     public void Segredo_vazio_recusa_sempre()
-        => AssinaturaWebhook.Valida("ts=1,v1=aa", "r", "1", "").Should().BeFalse();
+    {
+        // header valido (ts atual, assinado com segredo vazio): so o guard de segredo vazio o recusa
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        AssinaturaWebhook.Valida(Header("1", "r", ts, ""), "r", "1", secret: "").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void RequestId_nulo_ou_vazio_recusa(string? reqId)
+    {
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        AssinaturaWebhook.Valida(Header("123", reqId ?? "", ts), reqId, "123", Secret).Should().BeFalse();
+    }
 }
