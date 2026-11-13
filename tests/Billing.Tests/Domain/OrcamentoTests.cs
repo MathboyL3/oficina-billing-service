@@ -51,6 +51,19 @@ public class OrcamentoTests
     }
 
     [Fact]
+    public void Aprovar_local_ainda_valido_nao_expira_por_causa_do_offset()
+    {
+        var o = Novo(TimeSpan.FromHours(1));
+        // 30 min antes do vencimento (UTC), expresso como Local: em fuso a leste de UTC, ticks crus dariam "expirado".
+        var local = DateTime.SpecifyKind(
+            TimeZoneInfo.ConvertTimeFromUtc(o.ValidoAte.AddMinutes(-30), TimeZoneInfo.Local), DateTimeKind.Local);
+
+        o.Aprovar(local);
+
+        o.Status.Should().Be(StatusOrcamento.Aprovado);
+    }
+
+    [Fact]
     public void Aprovar_dentro_da_validade_muda_status()
     {
         var o = Novo();

@@ -43,7 +43,9 @@ public sealed class MercadoPagoGateway : IGatewayPagamento
         var pref = await resp.Content.ReadFromJsonAsync<PreferenciaResponse>(Json, ct)
             ?? throw new HttpRequestException("Resposta vazia do Mercado Pago.");
         var link = _opt.Sandbox ? pref.SandboxInitPoint ?? pref.InitPoint : pref.InitPoint;
-        return new CobrancaCriadaResult(pref.Id, link ?? "");
+        if (string.IsNullOrWhiteSpace(link))
+            throw new HttpRequestException("Mercado Pago não retornou init_point/sandbox_init_point.");
+        return new CobrancaCriadaResult(pref.Id, link);
     }
 
     public async Task<PagamentoInfo> ObterPagamentoAsync(string paymentId, CancellationToken ct)
@@ -77,10 +79,17 @@ public sealed class MercadoPagoGateway : IGatewayPagamento
         using var req = Request(HttpMethod.Post, $"/v1/payments/{Uri.EscapeDataString(paymentId)}/refunds");
         req.Headers.Add("X-Idempotency-Key", $"refund-{paymentId}");
         req.Content = JsonContent.Create(valor is null ? new { } : (object)new { amount = valor }, options: Json);
-        using var resp = await _http.SendAsync(req, ct);
-        if (resp.IsSuccessStatusCode) return new EstornoResult(true, null);
-        var erro = await resp.Content.ReadAsStringAsync(ct);
-        return new EstornoResult(false, $"{(int)resp.StatusCode}: {erro}");
+        try
+        {
+            using var resp = await _http.SendAsync(req, ct);
+            if (resp.IsSuccessStatusCode) return new EstornoResult(true, null);
+            var erro = await resp.Content.ReadAsStringAsync(ct);
+            return new EstornoResult(false, $"{(int)resp.StatusCode}: {erro}");
+        }
+        catch (Exception e) when (e is HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return new EstornoResult(false, $"Falha de transporte: {e.Message}");
+        }
     }
 
     private HttpRequestMessage Request(HttpMethod m, string path)

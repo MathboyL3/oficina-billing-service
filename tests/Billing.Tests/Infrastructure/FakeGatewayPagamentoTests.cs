@@ -23,6 +23,25 @@ public class FakeGatewayPagamentoTests
     }
 
     [Fact]
+    public async Task ObterPagamento_desconhecido_lanca()
+    {
+        await FluentActions.Awaiting(() => Gw("Aprovar").ObterPagamentoAsync("nao-existe", default)).Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Fact]
+    public async Task Estorno_ok_muda_status_para_estornado()
+    {
+        var gw = Gw("Aprovar");
+        var pid = Guid.NewGuid();
+        await gw.CriarCobrancaAsync(new CriarCobrancaRequest(pid, Guid.NewGuid(), "x", 10m), default);
+        var info = (await gw.BuscarPorReferenciaAsync(pid.ToString(), default))!;
+
+        (await gw.EstornarAsync(info.PaymentId, null, default)).Sucesso.Should().BeTrue();
+
+        (await gw.BuscarPorReferenciaAsync(pid.ToString(), default))!.Status.Should().Be(StatusPagamentoGateway.Estornado);
+    }
+
+    [Fact]
     public async Task Recusar_e_FalharEstorno()
     {
         var pid = Guid.NewGuid();

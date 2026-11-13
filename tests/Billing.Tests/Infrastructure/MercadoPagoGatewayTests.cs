@@ -103,6 +103,57 @@ public class MercadoPagoGatewayTests
     }
 
     [Fact]
+    public async Task Estornar_parcial_envia_amount()
+    {
+        var (gw, h) = Criar(_ => Json(new { id = 1 }, HttpStatusCode.Created));
+        (await gw.EstornarAsync("55", 10.5m, default)).Sucesso.Should().BeTrue();
+        using var body = JsonDocument.Parse(h.Bodies.Single());
+        body.RootElement.GetProperty("amount").GetDecimal().Should().Be(10.5m);
+    }
+
+    [Fact]
+    public async Task Estornar_falha_de_transporte_vira_resultado_de_erro()
+    {
+        foreach (Exception ex in new Exception[] { new HttpRequestException("conexao caiu"), new TaskCanceledException("timeout") })
+        {
+            var (gw, _) = Criar(_ => throw ex);
+            var r = await gw.EstornarAsync("55", null, CancellationToken.None);
+            r.Sucesso.Should().BeFalse();
+            r.Erro.Should().NotBeNullOrEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task Estornar_com_cancelamento_real_lanca()
+    {
+        using var cts = new CancellationTokenSource();
+        var (gw, _) = Criar(_ => { cts.Cancel(); throw new TaskCanceledException(); });
+        await FluentActions.Awaiting(() => gw.EstornarAsync("55", null, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ObterPagamento_404_lanca()
+    {
+        var (gw, _) = Criar(_ => Json(new { message = "not found" }, HttpStatusCode.NotFound));
+        await FluentActions.Awaiting(() => gw.ObterPagamentoAsync("1", default)).Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Fact]
+    public async Task CriarCobranca_sandbox_sem_sandbox_init_point_usa_init_point()
+    {
+        var (gw, _) = Criar(_ => Json(new { id = "p", init_point = "https://mp/prod" }), sandbox: true);
+        (await gw.CriarCobrancaAsync(new CriarCobrancaRequest(Guid.NewGuid(), Guid.NewGuid(), "x", 1m), default)).LinkPagamento.Should().Be("https://mp/prod");
+    }
+
+    [Fact]
+    public async Task CriarCobranca_sem_link_lanca()
+    {
+        var (gw, _) = Criar(_ => Json(new { id = "p" }));
+        await FluentActions.Awaiting(() => gw.CriarCobrancaAsync(new CriarCobrancaRequest(Guid.NewGuid(), Guid.NewGuid(), "x", 1m), default))
+            .Should().ThrowAsync<HttpRequestException>().WithMessage("*init_point*");
+    }
+
+    [Fact]
     public async Task Erro_http_na_criacao_lanca()
     {
         var (gw, _) = Criar(_ => Json(new { message = "invalid" }, HttpStatusCode.BadRequest));

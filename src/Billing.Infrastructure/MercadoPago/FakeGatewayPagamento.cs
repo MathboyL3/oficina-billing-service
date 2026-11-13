@@ -24,14 +24,22 @@ public sealed class FakeGatewayPagamento : IGatewayPagamento
     }
 
     public Task<PagamentoInfo> ObterPagamentoAsync(string paymentId, CancellationToken ct)
-        => Task.FromResult(PorReferencia.Values.FirstOrDefault(p => p.PaymentId == paymentId)
-            ?? new PagamentoInfo(paymentId, StatusPagamentoGateway.Pendente, null, "unknown"));
+    {
+        var info = PorReferencia.Values.FirstOrDefault(p => p.PaymentId == paymentId)
+            ?? throw new HttpRequestException($"Pagamento {paymentId} não encontrado (404).", null, System.Net.HttpStatusCode.NotFound);
+        return Task.FromResult(info);
+    }
 
     public Task<PagamentoInfo?> BuscarPorReferenciaAsync(string externalReference, CancellationToken ct)
         => Task.FromResult(PorReferencia.TryGetValue(externalReference, out var p) ? p : null);
 
     public Task<EstornoResult> EstornarAsync(string paymentId, decimal? valor, CancellationToken ct)
-        => Task.FromResult(_opt.FakeComportamento == "FalharEstorno"
-            ? new EstornoResult(false, "Falha simulada de estorno.")
-            : new EstornoResult(true, null));
+    {
+        if (_opt.FakeComportamento == "FalharEstorno")
+            return Task.FromResult(new EstornoResult(false, "Falha simulada de estorno."));
+        var par = PorReferencia.FirstOrDefault(kv => kv.Value.PaymentId == paymentId);
+        if (par.Key is not null)
+            PorReferencia[par.Key] = par.Value with { Status = StatusPagamentoGateway.Estornado, StatusBruto = "refunded" };
+        return Task.FromResult(new EstornoResult(true, null));
+    }
 }
