@@ -42,6 +42,7 @@ public sealed class Orcamento
         if (agora.UtcDateTime > ValidoAte) throw new DomainException("Orçamento expirado.");
         Status = StatusOrcamento.Aprovado;
     }
+
     public void Recusar(string motivo)
     {
         ExigirPendente();

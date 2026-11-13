@@ -25,6 +25,10 @@ public sealed class ErrorHandlingMiddleware
         {
             await Write(ctx, StatusCodes.Status404NotFound, ex.Message);
         }
+        catch (ForbiddenException ex)
+        {
+            await Write(ctx, StatusCodes.Status403Forbidden, ex.Message);
+        }
         catch (ConflictException ex)
         {
             await Write(ctx, StatusCodes.Status409Conflict, ex.Message);

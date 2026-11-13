@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Billing.Domain\Billing.Domain.csproj" />
@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="MassTransit" Version="8.5.12" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -15,3 +17,4 @@
   </PropertyGroup>
 
 </Project>
+
