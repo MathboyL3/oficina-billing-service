@@ -151,12 +151,14 @@ public class BillingConsumersTests
         _ordem.Should().Equal("EstornoFalhou", "OrcamentoCancelado", "commit");
     }
 
-    [Fact]
-    public async Task Estornar_sem_PaymentIdMp_publica_EstornoFalhou_sem_chamar_gateway()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public async Task Estornar_sem_PaymentIdMp_publica_EstornoFalhou_sem_chamar_gateway(string? paymentIdMp)
     {
         var os = Guid.NewGuid();
         var pag = Pagamento.Criar(os, Guid.NewGuid(), 10m);
-        pag.Aprovar(" ");
+        pag.Aprovar(paymentIdMp!);
         _pags.Setup(r => r.ObterPorIdAsync(pag.Id, It.IsAny<CancellationToken>())).ReturnsAsync(pag);
 
         await Estornar().Consume(Ctx(new EstornarPagamento(os, DateTime.UtcNow, pag.Id, "x")).Object);

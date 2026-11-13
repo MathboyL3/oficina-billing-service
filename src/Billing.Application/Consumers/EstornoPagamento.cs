@@ -1,4 +1,4 @@
-using Billing.Application.Pagamentos;
+﻿using Billing.Application.Pagamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
 using Oficina.Contracts;

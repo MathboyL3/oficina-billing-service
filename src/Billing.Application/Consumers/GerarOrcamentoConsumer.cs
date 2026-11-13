@@ -1,4 +1,4 @@
-using Billing.Domain.Common;
+﻿using Billing.Domain.Common;
 using Billing.Domain.Orcamentos;
 using MassTransit;
 using Microsoft.Extensions.Logging;
