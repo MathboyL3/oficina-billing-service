@@ -1,0 +1,394 @@
+{
+  "info": {
+    "name": "oficina-billing-service (Fase 4)",
+    "description": "Orçamento e pagamento (MongoDB + Mercado Pago). Direto: http://localhost:5002 · via Kong: http://localhost:32080/billing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5002"
+    },
+    {
+      "key": "osBaseUrl",
+      "value": "http://localhost:5001"
+    },
+    {
+      "key": "webhookSecret",
+      "value": "<MercadoPago__WebhookSecret>"
+    },
+    {
+      "key": "paymentId",
+      "value": "123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "osId",
+      "value": ""
+    },
+    {
+      "key": "orcamentoId",
+      "value": ""
+    },
+    {
+      "key": "pagamentoId",
+      "value": ""
+    },
+    {
+      "key": "execucaoId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (os-service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osBaseUrl}}/api/auth/login",
+              "host": [
+                "{{osBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "O token é emitido pelo os-service; o billing só valida o JWT (mesmo Issuer/Audience/Secret).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"gerente@oficina.local\",\n  \"senha\": \"Senha@12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('token', j.accessToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orçamentos",
+      "item": [
+        {
+          "name": "Obter orçamento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orcamentos/{{orcamentoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos",
+                "{{orcamentoId}}"
+              ]
+            },
+            "description": "Roles: Cliente (dono), Atendente, Gerente."
+          }
+        },
+        {
+          "name": "Orçamento da OS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orcamentos?osId={{osId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos"
+              ],
+              "query": [
+                {
+                  "key": "osId",
+                  "value": "{{osId}}"
+                }
+              ]
+            },
+            "description": "Roles: Cliente (dono), Atendente, Gerente. O teste salva orcamentoId."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (Array.isArray(j) && j.length) pm.collectionVariables.set('orcamentoId', j[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aprovar orçamento",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orcamentos/{{orcamentoId}}/aprovar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos",
+                "{{orcamentoId}}",
+                "aprovar"
+              ]
+            },
+            "description": "Publica OrcamentoAprovado; a Saga pede a cobrança."
+          }
+        },
+        {
+          "name": "Recusar orçamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orcamentos/{{orcamentoId}}/recusar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos",
+                "{{orcamentoId}}",
+                "recusar"
+              ]
+            },
+            "description": "Publica OrcamentoRecusado; a Saga compensa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Valor acima do esperado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pagamentos",
+      "item": [
+        {
+          "name": "Obter pagamento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/pagamentos/{{pagamentoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pagamentos",
+                "{{pagamentoId}}"
+              ]
+            },
+            "description": "Roles: Cliente (dono), Atendente, Gerente. Traz linkPagamento (Checkout Pro)."
+          }
+        },
+        {
+          "name": "Reprocessar estorno",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/pagamentos/{{pagamentoId}}/reprocessar-estorno",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pagamentos",
+                "{{pagamentoId}}",
+                "reprocessar-estorno"
+              ]
+            },
+            "description": "Role: Gerente. Só para pagamento em EstornoPendente (409 nos demais)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhook Mercado Pago",
+      "item": [
+        {
+          "name": "Webhook MP (exemplo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-signature",
+                "value": "ts=0,v1=preenchido-pelo-pre-request"
+              },
+              {
+                "key": "x-request-id",
+                "value": "preenchido-pelo-pre-request"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/mercadopago?data.id=123&type=payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "mercadopago"
+              ],
+              "query": [
+                {
+                  "key": "data.id",
+                  "value": "123"
+                },
+                {
+                  "key": "type",
+                  "value": "payment"
+                }
+              ]
+            },
+            "description": "Anônimo; validado por x-signature. O pre-request calcula o HMAC-SHA256 com `webhookSecret` (igual a MercadoPago__WebhookSecret do serviço) sobre `id:{data.id};request-id:{x-request-id};ts:{ts};`. Defina `paymentId` com o id real do pagamento no MP. Com webhookSecret vazio (modo Fake) a assinatura nunca valida (401): o modo Fake não usa webhook. Direto a rota é /webhooks/mercadopago; via Kong, /billing/webhooks/mercadopago.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payment\",\n  \"data\": {\n    \"id\": \"123\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Assinatura do Mercado Pago: manifest = id:{data.id};request-id:{x-request-id};ts:{ts};",
+                  "const secret = pm.variables.get('webhookSecret');",
+                  "const dataId = String(pm.variables.get('paymentId') || '123').toLowerCase();",
+                  "const ts = String(Math.floor(Date.now() / 1000));",
+                  "const requestId = pm.variables.replaceIn('{{$guid}}');",
+                  "const manifest = 'id:' + dataId + ';request-id:' + requestId + ';ts:' + ts + ';';",
+                  "const v1 = CryptoJS.HmacSHA256(manifest, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.upsert({ key: 'x-signature', value: 'ts=' + ts + ',v1=' + v1 });",
+                  "pm.request.headers.upsert({ key: 'x-request-id', value: requestId });",
+                  "console.log('manifest:', manifest);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Live",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
