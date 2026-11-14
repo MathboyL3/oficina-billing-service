@@ -47,7 +47,8 @@ public sealed class WebhookMercadoPagoUseCase
                 var orc = await _orcs.ObterPorOsAsync(pag.OrdemServicoId, ct);
                 var aposCancelamento = orc is { Status: StatusOrcamento.Cancelado or StatusOrcamento.Recusado };
                 pag.Aprovar(info.PaymentId);
-                // Registra a intenção antes de chamar o gateway: se o commit falhar depois do estorno real, o reprocessamento encontra EstornoPendente.
+                // Registra a intenção antes de chamar o gateway (sem commit intermediário: o commit é do chamador).
+                // Se o commit falhar após um estorno real, o pagamento segue Pendente e a próxima notificação do MP (refunded) reconcilia abaixo.
                 if (aposCancelamento) pag.MarcarEstornoPendente();
                 if (!await GravarAsync(pag, ct)) return;
                 if (aposCancelamento)
@@ -59,6 +60,17 @@ public sealed class WebhookMercadoPagoUseCase
                     break;
                 }
                 await _bus.Publish(new PagamentoConfirmado(pag.OrdemServicoId, DateTime.UtcNow, pag.Id), ct);
+                break;
+            case StatusPagamentoGateway.Estornado:
+                // Reconciliação: estorno já feito no MP mas o commit local se perdeu; só vale se a OS foi cancelada/recusada.
+                var orcE = await _orcs.ObterPorOsAsync(pag.OrdemServicoId, ct);
+                if (orcE is not { Status: StatusOrcamento.Cancelado or StatusOrcamento.Recusado }) return;
+                pag.Aprovar(info.PaymentId);
+                pag.MarcarEstornado();
+                if (!await GravarAsync(pag, ct)) return;
+                _log.LogWarning("{alerta}: pagamento {PagamentoId} da OS {OrdemServicoId} reconciliado como estornado",
+                    "estorno_reconciliado", pag.Id, pag.OrdemServicoId);
+                await _bus.Publish(new PagamentoEstornado(pag.OrdemServicoId, DateTime.UtcNow, pag.Id), ct);
                 break;
             case StatusPagamentoGateway.Recusado:
                 pag.Recusar(info.PaymentId);

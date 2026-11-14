@@ -73,6 +73,33 @@ public class PagamentoUseCasesTests
         p.Status.Should().Be(StatusPagamento.Estornado);
     }
 
+    [Fact]
+    public async Task Reprocessar_com_MP_refunded_marca_Estornado_sem_chamar_EstornarAsync()
+    {
+        var p = Com(StatusPagamento.EstornoPendente);
+        _gw.Setup(g => g.ObterPagamentoAsync("55", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("55", StatusPagamentoGateway.Estornado, p.OrdemServicoId.ToString(), "refunded"));
+
+        await Uc().ReprocessarEstornoAsync(p.Id);
+
+        p.Status.Should().Be(StatusPagamento.Estornado);
+        _gw.Verify(g => g.EstornarAsync(It.IsAny<string>(), It.IsAny<decimal?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.Is<PagamentoEstornado>(m => m.PagamentoId == p.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Reprocessar_com_consulta_previa_falhando_ainda_estorna()
+    {
+        var p = Com(StatusPagamento.EstornoPendente);
+        _gw.Setup(g => g.ObterPagamentoAsync("55", It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("mp fora"));
+        _gw.Setup(g => g.EstornarAsync("55", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
+
+        await Uc().ReprocessarEstornoAsync(p.Id);
+
+        p.Status.Should().Be(StatusPagamento.Estornado);
+        _gw.Verify(g => g.EstornarAsync("55", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Theory]
     [InlineData(StatusPagamento.Pendente)]
     [InlineData(StatusPagamento.Aprovado)]

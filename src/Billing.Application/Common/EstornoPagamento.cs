@@ -10,16 +10,19 @@ internal static class EstornoPagamento
 {
     /// <summary>
     /// Estorna o pagamento Aprovado/EstornoPendente e publica PagamentoEstornado ou EstornoFalhou (sem commit).
-    /// Se o gateway falhar, reconsulta o MP: já estornado lá conta como sucesso.
+    /// Consulta o MP antes: já estornado (refunded) lá só marca Estornado, sem nova chamada de estorno.
+    /// Se a consulta prévia falhar, estorna mesmo assim (não bloqueia o estorno). Se o estorno falhar, reconsulta o MP.
     /// </summary>
     public static async Task EstornarEPublicarAsync(IPublishEndpoint bus, IPagamentoRepository repo, IGatewayPagamento gw,
         Pagamento pag, CancellationToken ct)
     {
         var paymentId = pag.PaymentIdMp;
-        var r = string.IsNullOrWhiteSpace(paymentId)
-            ? new EstornoResult(false, "Pagamento sem identificador no gateway (PaymentIdMp ausente).")
-            : await gw.EstornarAsync(paymentId, null, ct);
-        var ok = r.Sucesso || (!string.IsNullOrWhiteSpace(paymentId) && await JaEstornadoNoMpAsync(gw, paymentId, ct));
+        var temId = !string.IsNullOrWhiteSpace(paymentId);
+        var jaEstornado = temId && await JaEstornadoNoMpAsync(gw, paymentId!, ct);
+        var r = jaEstornado ? new EstornoResult(true, null)
+            : !temId ? new EstornoResult(false, "Pagamento sem identificador no gateway (PaymentIdMp ausente).")
+            : await gw.EstornarAsync(paymentId!, null, ct);
+        var ok = r.Sucesso || (temId && await JaEstornadoNoMpAsync(gw, paymentId!, ct));
         if (ok)
         {
             pag.MarcarEstornado();

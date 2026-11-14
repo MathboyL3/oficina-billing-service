@@ -69,6 +69,7 @@ public class MercadoPagoGatewayTests
     [InlineData("rejected", StatusPagamentoGateway.Recusado)]
     [InlineData("cancelled", StatusPagamentoGateway.Recusado)]
     [InlineData("refunded", StatusPagamentoGateway.Estornado)]
+    [InlineData("charged_back", StatusPagamentoGateway.Estornado)]
     [InlineData("in_process", StatusPagamentoGateway.Pendente)]
     public async Task ObterPagamento_mapeia_status(string mp, StatusPagamentoGateway esperado)
     {

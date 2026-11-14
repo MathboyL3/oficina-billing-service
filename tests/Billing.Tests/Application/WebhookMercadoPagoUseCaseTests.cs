@@ -127,6 +127,37 @@ public class WebhookMercadoPagoUseCaseTests
         _bus.Verify(b => b.Publish(It.Is<PagamentoEstornado>(m => m.PagamentoId == p.Id && m.OrdemServicoId == p.OrdemServicoId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Estornado_no_MP_com_pagamento_pendente_e_orcamento_cancelado_ou_recusado_reconcilia(bool cancelado)
+    {
+        var p = Pendente();
+        OrcamentoCom(p, cancelado, !cancelado);
+        _gw.Setup(g => g.ObterPagamentoAsync("92", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("92", StatusPagamentoGateway.Estornado, p.OrdemServicoId.ToString(), "refunded"));
+
+        await Uc().ProcessarAsync("92", default);
+
+        p.Status.Should().Be(StatusPagamento.Estornado);
+        _gw.Verify(g => g.EstornarAsync(It.IsAny<string>(), It.IsAny<decimal?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.Is<PagamentoEstornado>(m => m.PagamentoId == p.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Estornado_no_MP_com_orcamento_ativo_ou_inexistente_nao_faz_nada()
+    {
+        var p = Pendente();
+        _gw.Setup(g => g.ObterPagamentoAsync("93", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo("93", StatusPagamentoGateway.Estornado, p.OrdemServicoId.ToString(), "refunded"));
+
+        await Uc().ProcessarAsync("93", default);
+
+        p.Status.Should().Be(StatusPagamento.Pendente);
+        _bus.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task Aprovado_com_orcamento_cancelado_e_estorno_falho_publica_EstornoFalhou_e_fica_pendente()
     {

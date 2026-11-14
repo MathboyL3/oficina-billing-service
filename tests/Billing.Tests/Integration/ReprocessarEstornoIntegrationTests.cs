@@ -51,6 +51,24 @@ public class ReprocessarEstornoIntegrationTests : IClassFixture<BillingApiFactor
     }
 
     [Fact]
+    public async Task Id_inexistente_404()
+    {
+        var r = await Cliente("Gerente").PostAsync($"/api/pagamentos/{Guid.NewGuid()}/reprocessar-estorno", null);
+
+        r.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Atendente_403()
+    {
+        var p = await PagamentoAsync(true);
+
+        var r = await Cliente("Atendente").PostAsync($"/api/pagamentos/{p.Id}/reprocessar-estorno", null);
+
+        r.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task Cliente_403()
     {
         var p = await PagamentoAsync(true);
