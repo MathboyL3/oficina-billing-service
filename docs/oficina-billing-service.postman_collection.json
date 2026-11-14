@@ -24,12 +24,20 @@
       "value": "http://localhost:5001"
     },
     {
+      "key": "authUrl",
+      "value": "https://function-bun-production-8bb2.up.railway.app"
+    },
+    {
+      "key": "clienteToken",
+      "value": ""
+    },
+    {
       "key": "webhookSecret",
-      "value": "<MercadoPago__WebhookSecret>"
+      "value": "dev-webhook-secret-0123456789"
     },
     {
       "key": "paymentId",
-      "value": "123"
+      "value": ""
     },
     {
       "key": "token",
@@ -104,6 +112,53 @@
               }
             }
           ]
+        },
+        {
+          "name": "Login cliente (CPF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{authUrl}}/auth",
+              "host": [
+                "{{authUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "description": "Chama a Railway Function fiap-auth-lambda (POST /auth), que consulta o cliente no os-service via Kong (/os/internal, X-Service-Key) e devolve o JWT com role Cliente. O CPF precisa estar cadastrado (Criar cliente). O teste salva access_token em {{clienteToken}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cpf\": \"52998224725\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login cliente 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('clienteToken', j.access_token);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -126,7 +181,17 @@
                 "{{orcamentoId}}"
               ]
             },
-            "description": "Roles: Cliente (dono), Atendente, Gerente."
+            "description": "Roles: Cliente (dono), Atendente, Gerente. Usa {{clienteToken}}.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         },
         {
@@ -150,7 +215,17 @@
                 }
               ]
             },
-            "description": "Roles: Cliente (dono), Atendente, Gerente. O teste salva orcamentoId."
+            "description": "Roles: Cliente (dono), Atendente, Gerente. Usa {{clienteToken}}. O teste salva orcamentoId.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
             {
@@ -182,7 +257,17 @@
                 "aprovar"
               ]
             },
-            "description": "Publica OrcamentoAprovado; a Saga pede a cobrança."
+            "description": "Cliente dono ({{clienteToken}}). Publica OrcamentoAprovado; a Saga pede a cobrança.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         },
         {
@@ -207,7 +292,7 @@
                 "recusar"
               ]
             },
-            "description": "Publica OrcamentoRecusado; a Saga compensa.",
+            "description": "Cliente dono ({{clienteToken}}). Publica OrcamentoRecusado; a Saga compensa.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"motivo\": \"Valor acima do esperado\"\n}",
@@ -216,6 +301,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         }
@@ -240,7 +335,17 @@
                 "{{pagamentoId}}"
               ]
             },
-            "description": "Roles: Cliente (dono), Atendente, Gerente. Traz linkPagamento (Checkout Pro)."
+            "description": "Roles: Cliente (dono), Atendente, Gerente. Traz linkPagamento (Checkout Pro). Usa {{clienteToken}}.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         },
         {
@@ -287,7 +392,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/webhooks/mercadopago?data.id=123&type=payment",
+              "raw": "{{baseUrl}}/webhooks/mercadopago?data.id={{paymentId}}&type=payment",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -298,7 +403,7 @@
               "query": [
                 {
                   "key": "data.id",
-                  "value": "123"
+                  "value": "{{paymentId}}"
                 },
                 {
                   "key": "type",
@@ -306,10 +411,10 @@
                 }
               ]
             },
-            "description": "Anônimo; validado por x-signature. O pre-request calcula o HMAC-SHA256 com `webhookSecret` (igual a MercadoPago__WebhookSecret do serviço) sobre `id:{data.id};request-id:{x-request-id};ts:{ts};`. Defina `paymentId` com o id real do pagamento no MP. Com webhookSecret vazio (modo Fake) a assinatura nunca valida (401): o modo Fake não usa webhook. Direto a rota é /webhooks/mercadopago; via Kong, /billing/webhooks/mercadopago.",
+            "description": "Anônimo; validado por x-signature. O pre-request calcula o HMAC-SHA256 com `webhookSecret` (igual a MercadoPago__WebhookSecret do serviço) sobre `id:{data.id};request-id:{x-request-id};ts:{ts};`. A assinatura é validada em qualquer modo; com segredo vazio sempre 401. O docker-compose do billing define MercadoPago__WebhookSecret=dev-webhook-secret-0123456789 (mesmo valor da variável webhookSecret). No modo Fake, após aprovar um orçamento (pagamentoId salvo), o pre-request deriva paymentId = fake-<pagamentoId sem hífens>: resposta 200 e idempotente (pagamento já final). Com MP real, defina paymentId. Direto a rota é /webhooks/mercadopago; via Kong, /billing/webhooks/mercadopago.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"payment\",\n  \"data\": {\n    \"id\": \"123\"\n  }\n}",
+              "raw": "{\n  \"type\": \"payment\",\n  \"data\": {\n    \"id\": \"{{paymentId}}\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -328,7 +433,12 @@
                 "exec": [
                   "// Assinatura do Mercado Pago: manifest = id:{data.id};request-id:{x-request-id};ts:{ts};",
                   "const secret = pm.variables.get('webhookSecret');",
-                  "const dataId = String(pm.variables.get('paymentId') || '123').toLowerCase();",
+                  "// Modo Fake: o id do pagamento no gateway é 'fake-' + pagamentoId sem hífens. Com MP real, defina paymentId.",
+                  "let paymentId = pm.variables.get('paymentId');",
+                  "if (!paymentId && pm.variables.get('pagamentoId')) paymentId = 'fake-' + String(pm.variables.get('pagamentoId')).replace(/-/g, '');",
+                  "paymentId = paymentId || '123';",
+                  "pm.collectionVariables.set('paymentId', paymentId);",
+                  "const dataId = String(paymentId).toLowerCase();",
                   "const ts = String(Math.floor(Date.now() / 1000));",
                   "const requestId = pm.variables.replaceIn('{{$guid}}');",
                   "const manifest = 'id:' + dataId + ';request-id:' + requestId + ';ts:' + ts + ';';",

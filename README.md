@@ -1,6 +1,6 @@
 # oficina-billing-service
 
-Orçamento e pagamento (Mercado Pago) da OS — Tech Challenge Fase 4 (SOAT/FIAP). Participa da **Saga orquestrada** do [oficina-os-service](https://github.com/MathboyL3/oficina-os-service) sobre RabbitMQ (MassTransit), com **MongoDB**. Arquitetura geral: [`docs/ARQUITETURA-FASE4.md`](https://github.com/MathboyL3/oficina-os-service/blob/feat/fase4/docs/ARQUITETURA-FASE4.md) no os-service.
+Orçamento e pagamento (Mercado Pago) da OS — Tech Challenge Fase 4 (SOAT/FIAP). Participa da **Saga orquestrada** do [oficina-os-service](https://github.com/MathboyL3/oficina-os-service) sobre RabbitMQ (MassTransit), com **MongoDB**. Arquitetura geral: [`docs/ARQUITETURA-FASE4.md`](https://github.com/MathboyL3/oficina-os-service/blob/main/docs/ARQUITETURA-FASE4.md) no os-service.
 
 ## Responsabilidades
 
@@ -41,7 +41,7 @@ Publicadas por ações externas: `OrcamentoAprovado`/`OrcamentoRecusado` (API ap
 
 ## API
 
-Direto: `http://localhost:5002`; via Kong: `http://localhost:32080/billing/api/...`. Coleção Postman: [`docs/oficina-billing-service.postman_collection.json`](docs/oficina-billing-service.postman_collection.json).
+Direto: `http://localhost:5002`; via Kong: `http://localhost:32080/billing/api/...`. Coleção Postman: [`docs/oficina-billing-service.postman_collection.json`](docs/oficina-billing-service.postman_collection.json). As rotas de Cliente (orçamentos/pagamentos) usam `{{clienteToken}}`, obtido pela request "Login cliente (CPF)" (Railway Function `fiap-auth-lambda`; o CPF deve estar cadastrado no os-service).
 
 | Método e rota | Acesso |
 |---|---|
@@ -60,7 +60,7 @@ Integração REST, sem SDK, atrás de `IGatewayPagamento`:
 - **Criar cobrança:** `POST /checkout/preferences` com `external_reference` = `OrdemServicoId`, `notification_url` = `{PublicBaseUrl}/webhooks/mercadopago` e `X-Idempotency-Key` = `pref-{OrdemServicoId}` (retomada não duplica a cobrança). Guarda o link (`init_point`, ou `sandbox_init_point` com `Sandbox=true`).
 - **Webhook:** `x-signature` = `ts=...,v1=HMAC_SHA256(WebhookSecret, "id:{data.id};request-id:{x-request-id};ts:{ts};")`. Assinatura inválida/ausente ou `ts` malformado/fora da tolerância (5 min) = **401**, sem tocar em nada. Com `data.id` na query (formato do MP) a assinatura é validada antes de ler o corpo. Depois consulta `GET /v1/payments/{id}` (não confia no corpo), localiza o pagamento por `external_reference` e publica o evento. Idempotente: pagamento já final é ignorado; resposta 200.
 - **Estorno:** `POST /v1/payments/{id}/refunds` (`X-Idempotency-Key` = `refund-{paymentId}`); consulta o MP antes e, se já estiver `refunded`, só marca `Estornado`.
-- **Modo:** `MercadoPago__Modo` = `Real` | `Fake` (padrão `Fake`). No Fake o pagamento é confirmado na hora, sem webhook nem rede. `MercadoPago__FakeComportamento` (só Fake) = `Aprovar` | `Recusar` | `FalharEstorno`.
+- **Modo:** `MercadoPago__Modo` = `Real` | `Fake` (padrão `Fake`). No Fake o pagamento é confirmado na hora, sem rede (o gateway Fake não chama o MP). O endpoint de webhook continua **validando a assinatura** (`AssinaturaWebhook`, secret vazio = sempre 401): por isso o `docker-compose.yml` define `MercadoPago__WebhookSecret=dev-webhook-secret-0123456789` e a coleção Postman usa a variável `webhookSecret` com o mesmo valor. Na demo, a request "Webhook MP (exemplo)" deriva `paymentId = fake-<pagamentoId sem hífens>` e responde 200 (pagamento já final, idempotente). No cluster, o segredo vem de `MP_WEBHOOK_SECRET` no `bootstrap-secrets.ps1` (use o mesmo valor de dev para a demo). Para ativar a falha de estorno na demo: `MercadoPago__FakeComportamento=FalharEstorno` (compose, ou chave nova no `k8s/configmap.yaml`) e reiniciar o billing. `MercadoPago__FakeComportamento` (só Fake) = `Aprovar` | `Recusar` | `FalharEstorno`.
 
 ## Configuração
 

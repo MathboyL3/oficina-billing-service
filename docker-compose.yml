@@ -31,6 +31,7 @@ services:
       ConnectionStrings__Mongo: mongodb://billing-mongo:27017/?replicaSet=rs0&directConnection=true
       Mongo__Database: oficina_billing
       MercadoPago__Modo: Fake
+      MercadoPago__WebhookSecret: dev-webhook-secret-0123456789
     ports:
       - "5002:8080"
 
