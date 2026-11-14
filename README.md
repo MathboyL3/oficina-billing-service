@@ -55,3 +55,21 @@ Passos (a partir da raiz do repo):
 2. `kubectl apply -k k8s/`
 
 **Notas:** o Mongo (`billing-mongo`) roda **sem autenticação** e só é acessível dentro do cluster. Se o PVC for recriado, reexecute o Job de init do replica set: `kubectl delete job billing-mongo-init -n oficina && kubectl apply -k k8s/`. `MercadoPago__PublicBaseUrl` aponta para o Kong local (`http://localhost:32080/billing`); a rota `/billing` no Kong é criada na Task 4.4.
+
+## CI/CD
+
+Pipeline em `.github/workflows/ci-cd.yml` (GitHub Actions).
+
+| Job | Quando | O que faz |
+|-----|--------|-----------|
+| `build-test-sonar` | PR e push na `main` | restore, build Release, `dotnet test` com gate de cobertura >= 80% (coverlet; sempre ativo) e, se `SONAR_TOKEN` existir, análise SonarCloud com quality gate. Publica o artifact `coverage`. |
+| `image` | push na `main` | build da imagem Docker e push para o GHCR (`:<sha>` e `:latest`, nome em minúsculas) via `GITHUB_TOKEN`. |
+| `deploy` | push na `main`, após `image` | runner self-hosted (`environment: producao`): fixa a tag `<sha>` no `k8s/kustomization.yaml`, `kubectl apply -k k8s/` e `rollout status`. |
+
+**Secrets/vars necessários**
+- `secrets.SONAR_TOKEN` (opcional: sem ele a análise Sonar é pulada), `vars.SONAR_PROJECT_KEY`, `vars.SONAR_ORGANIZATION`.
+- Environment `producao` (pode exigir aprovação manual).
+- `GITHUB_TOKEN` (automático) com `packages: write` para publicar no GHCR.
+- Deploy: runner self-hosted com `kubectl` apontando para o cluster (docker-desktop), `fiap-infra-k8s` aplicado e `k8s/bootstrap-secrets.ps1` já executado.
+
+**Proteger a `main` (passo manual, não configurável por arquivo):** Settings → Branches → Add rule para `main`: *Require a pull request before merging* e *Require status checks to pass* com o check `build-test-sonar`.
