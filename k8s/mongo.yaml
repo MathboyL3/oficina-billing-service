@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-mongo
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: billing-mongo
+    app.kubernetes.io/part-of: oficina
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: billing-mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: billing-mongo
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: billing-mongo
+    app.kubernetes.io/part-of: oficina
+spec:
+  serviceName: billing-mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: billing-mongo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: billing-mongo
+        app.kubernetes.io/part-of: oficina
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          args: ["--replSet", "rs0", "--bind_ip_all"]
+          ports:
+            - name: mongo
+              containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Inicializa o replica set (necessario p/ transacoes/outbox do MassTransit). Idempotente: se ja inicializado, sai com 0.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: billing-mongo-init
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: billing-mongo-init
+    app.kubernetes.io/part-of: oficina
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: billing-mongo-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: mongo:7
+          command:
+            - mongosh
+            - --host
+            - billing-mongo-0.billing-mongo.oficina.svc.cluster.local:27017
+            - --quiet
+            - --eval
+            - |
+              try {
+                rs.status();
+                print('replica set ja inicializado');
+              } catch (e) {
+                var r = rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'billing-mongo-0.billing-mongo.oficina.svc.cluster.local:27017'}]});
+                if (!r.ok) { quit(1); }
+                print('replica set inicializado');
+              }
