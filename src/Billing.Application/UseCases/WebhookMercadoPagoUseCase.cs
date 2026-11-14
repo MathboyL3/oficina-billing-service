@@ -1,7 +1,10 @@
 using Billing.Application.Common;
 using Billing.Application.Pagamentos;
+using Billing.Application.Consumers;
+using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
+using Microsoft.Extensions.Logging;
 using Oficina.Contracts;
 
 namespace Billing.Application.UseCases;
@@ -11,13 +14,18 @@ public sealed class WebhookMercadoPagoUseCase
 {
     private readonly IGatewayPagamento _gw;
     private readonly IPagamentoRepository _repo;
+    private readonly IOrcamentoRepository _orcs;
     private readonly IPublishEndpoint _bus;
+    private readonly ILogger<WebhookMercadoPagoUseCase> _log;
 
-    public WebhookMercadoPagoUseCase(IGatewayPagamento gw, IPagamentoRepository repo, IPublishEndpoint bus)
+    public WebhookMercadoPagoUseCase(IGatewayPagamento gw, IPagamentoRepository repo, IOrcamentoRepository orcs, IPublishEndpoint bus,
+        ILogger<WebhookMercadoPagoUseCase> log)
     {
         _gw = gw;
         _repo = repo;
+        _orcs = orcs;
         _bus = bus;
+        _log = log;
     }
 
     public async Task ProcessarAsync(string paymentId, CancellationToken ct)
@@ -39,6 +47,15 @@ public sealed class WebhookMercadoPagoUseCase
             case StatusPagamentoGateway.Aprovado:
                 pag.Aprovar(info.PaymentId);
                 if (!await GravarAsync(pag, ct)) return;
+                var orc = await _orcs.ObterPorOsAsync(pag.OrdemServicoId, ct);
+                if (orc is { Status: StatusOrcamento.Cancelado or StatusOrcamento.Recusado })
+                {
+                    // OS já cancelada/recusada: a Saga não espera mais o pagamento, então devolve o dinheiro em vez de confirmar.
+                    _log.LogWarning("{alerta}: pagamento {PagamentoId} da OS {OrdemServicoId} aprovado com orçamento {StatusOrcamento}; estornando",
+                        "pagamento_apos_cancelamento", pag.Id, pag.OrdemServicoId, orc.Status);
+                    await EstornoPagamento.EstornarEPublicarAsync(_bus, _repo, _gw, pag, ct);
+                    break;
+                }
                 await _bus.Publish(new PagamentoConfirmado(pag.OrdemServicoId, DateTime.UtcNow, pag.Id), ct);
                 break;
             case StatusPagamentoGateway.Recusado:

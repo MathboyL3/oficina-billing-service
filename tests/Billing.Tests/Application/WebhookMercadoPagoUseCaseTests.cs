@@ -1,9 +1,11 @@
 using Billing.Application.Common;
 using Billing.Application.Pagamentos;
 using Billing.Application.UseCases;
+using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using FluentAssertions;
 using MassTransit;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Oficina.Contracts;
 
@@ -14,7 +16,8 @@ public class WebhookMercadoPagoUseCaseTests
     private readonly Mock<IGatewayPagamento> _gw = new();
     private readonly Mock<IPagamentoRepository> _repo = new();
     private readonly Mock<IPublishEndpoint> _bus = new();
-    private WebhookMercadoPagoUseCase Uc() => new(_gw.Object, _repo.Object, _bus.Object);
+    private readonly Mock<IOrcamentoRepository> _orcs = new();
+    private WebhookMercadoPagoUseCase Uc() => new(_gw.Object, _repo.Object, _orcs.Object, _bus.Object, NullLogger<WebhookMercadoPagoUseCase>.Instance);
 
     private Pagamento Pendente()
     {
@@ -92,4 +95,63 @@ public class WebhookMercadoPagoUseCaseTests
 
         _bus.VerifyNoOtherCalls();
     }
-}
+
+    private Orcamento OrcamentoCom(Pagamento p, bool cancelar, bool recusar = false)
+    {
+        var o = Orcamento.Gerar(p.OrdemServicoId, Guid.NewGuid(), new[] { new ItemOrcamentoDominio("Servico", Guid.NewGuid(), "x", 100m, 1) }, TimeSpan.FromDays(1));
+        if (cancelar) o.Cancelar();
+        if (recusar) o.Recusar("nao");
+        _orcs.Setup(r => r.ObterPorOsAsync(p.OrdemServicoId, It.IsAny<CancellationToken>())).ReturnsAsync(o);
+        return o;
+    }
+
+    private void Aprovado(Pagamento p, string id) =>
+        _gw.Setup(g => g.ObterPagamentoAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagamentoInfo(id, StatusPagamentoGateway.Aprovado, p.OrdemServicoId.ToString(), "approved"));
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Aprovado_com_orcamento_cancelado_ou_recusado_estorna_e_nao_confirma(bool cancelado)
+    {
+        var p = Pendente();
+        OrcamentoCom(p, cancelado, !cancelado);
+        Aprovado(p, "90");
+        _gw.Setup(g => g.EstornarAsync("90", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
+
+        await Uc().ProcessarAsync("90", default);
+
+        p.Status.Should().Be(StatusPagamento.Estornado);
+        _bus.Verify(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.Is<PagamentoEstornado>(m => m.PagamentoId == p.Id && m.OrdemServicoId == p.OrdemServicoId), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Aprovado_com_orcamento_cancelado_e_estorno_falho_publica_EstornoFalhou_e_fica_pendente()
+    {
+        var p = Pendente();
+        OrcamentoCom(p, true);
+        Aprovado(p, "91");
+        _gw.Setup(g => g.EstornarAsync("91", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(false, "boom"));
+
+        await Uc().ProcessarAsync("91", default);
+
+        p.Status.Should().Be(StatusPagamento.EstornoPendente);
+        _bus.Verify(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.Is<EstornoFalhou>(m => m.PagamentoId == p.Id && m.Motivo == "boom"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Aprovado_com_orcamento_aprovado_segue_fluxo_normal()
+    {
+        var p = Pendente();
+        var o = OrcamentoCom(p, false);
+        o.Aprovar(DateTimeOffset.UtcNow);
+        Aprovado(p, "92");
+
+        await Uc().ProcessarAsync("92", default);
+
+        p.Status.Should().Be(StatusPagamento.Aprovado);
+        _gw.Verify(g => g.EstornarAsync(It.IsAny<string>(), It.IsAny<decimal?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _bus.Verify(b => b.Publish(It.Is<PagamentoConfirmado>(m => m.PagamentoId == p.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }}

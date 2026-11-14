@@ -43,7 +43,7 @@ public class BillingConsumersTests
 
     private GerarOrcamentoConsumer Gerar() => new(_orcs.Object, _uow.Object, Options.Create(new BillingOptions()), Microsoft.Extensions.Logging.Abstractions.NullLogger<GerarOrcamentoConsumer>.Instance);
     private CriarCobrancaConsumer Cobrar(string modo) =>
-        new(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, new Mock<IPublishEndpoint>().Object), _uow.Object, Options.Create(new ModoPagamento { Modo = modo }), NullLogger<CriarCobrancaConsumer>.Instance);
+        new(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, _orcs.Object, new Mock<IPublishEndpoint>().Object, NullLogger<WebhookMercadoPagoUseCase>.Instance), _uow.Object, Options.Create(new ModoPagamento { Modo = modo }), NullLogger<CriarCobrancaConsumer>.Instance);
     private CancelarOrcamentoConsumer Cancelar() => new(_orcs.Object, _pags.Object, _gw.Object, _uow.Object, NullLogger<CancelarOrcamentoConsumer>.Instance);
     private EstornarPagamentoConsumer Estornar() => new(_pags.Object, _gw.Object, _uow.Object, NullLogger<EstornarPagamentoConsumer>.Instance);
 
@@ -281,7 +281,7 @@ public class BillingConsumersTests
             .ReturnsAsync((string r, CancellationToken _) => new PagamentoInfo("9", StatusPagamentoGateway.Aprovado, r, "approved"));
         var bus = new Mock<IPublishEndpoint>();
         bus.Setup(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>())).Callback(() => _ordem.Add("PagamentoConfirmado")).Returns(Task.CompletedTask);
-        var c = new CriarCobrancaConsumer(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, bus.Object), _uow.Object, Options.Create(new ModoPagamento { Modo = "Fake" }), NullLogger<CriarCobrancaConsumer>.Instance);
+        var c = new CriarCobrancaConsumer(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, _orcs.Object, bus.Object, NullLogger<WebhookMercadoPagoUseCase>.Instance), _uow.Object, Options.Create(new ModoPagamento { Modo = "Fake" }), NullLogger<CriarCobrancaConsumer>.Instance);
 
         await c.Consume(Ctx(new CriarCobranca(os, DateTime.UtcNow, Guid.NewGuid(), 10m)).Object);
 
