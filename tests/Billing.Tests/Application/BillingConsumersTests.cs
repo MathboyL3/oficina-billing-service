@@ -277,8 +277,9 @@ public class BillingConsumersTests
         _gw.Setup(g => g.CriarCobrancaAsync(It.IsAny<CriarCobrancaRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CobrancaCriadaResult("pref-1", "http://fake/pay"));
         _pags.Setup(r => r.InserirAsync(It.IsAny<Pagamento>(), It.IsAny<CancellationToken>())).Callback((Pagamento p, CancellationToken _) => inserido = p).Returns(Task.CompletedTask);
         _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).Returns(() => Task.FromResult(inserido));
-        _gw.Setup(g => g.BuscarPorReferenciaAsync(os.ToString(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string r, CancellationToken _) => new PagamentoInfo("9", StatusPagamentoGateway.Aprovado, r, "approved"));
+        // Fake sem estado: o consumer consulta pelo paymentId derivado do Pagamento e informa a OS como referência.
+        _gw.Setup(g => g.ObterPagamentoAsync(It.Is<string>(s => inserido != null && s == $"fake-{inserido.Id:N}"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, CancellationToken _) => new PagamentoInfo(id, StatusPagamentoGateway.Aprovado, null, "Aprovado"));
         var bus = new Mock<IPublishEndpoint>();
         bus.Setup(b => b.Publish(It.IsAny<PagamentoConfirmado>(), It.IsAny<CancellationToken>())).Callback(() => _ordem.Add("PagamentoConfirmado")).Returns(Task.CompletedTask);
         var c = new CriarCobrancaConsumer(_pags.Object, _gw.Object, new WebhookMercadoPagoUseCase(_gw.Object, _pags.Object, _orcs.Object, bus.Object, NullLogger<WebhookMercadoPagoUseCase>.Instance), _uow.Object, Options.Create(new ModoPagamento { Modo = "Fake" }), NullLogger<CriarCobrancaConsumer>.Instance);

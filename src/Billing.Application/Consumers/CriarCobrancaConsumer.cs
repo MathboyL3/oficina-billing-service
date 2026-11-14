@@ -58,11 +58,11 @@ public sealed class CriarCobrancaConsumer : IConsumer<CriarCobranca>
 
         await context.Publish(new CobrancaCriada(m.OrdemServicoId, DateTime.UtcNow, pag.Id, pag.LinkPagamento ?? ""), ct);
 
-        // Modo Fake: não há webhook — confirma consultando o gateway em memória.
+        // Modo Fake: não há webhook — confirma consultando o gateway (sem estado: paymentId derivado do Pagamento; a referência é a OS).
         if (_modo.Fake && pag.Status == StatusPagamento.Pendente)
         {
-            var info = await _gw.BuscarPorReferenciaAsync(pag.OrdemServicoId.ToString(), ct);
-            if (info is not null) await _webhook.AplicarAsync(info, ct);
+            var info = await _gw.ObterPagamentoAsync($"fake-{pag.Id:N}", ct);
+            await _webhook.AplicarAsync(info with { ExternalReference = pag.OrdemServicoId.ToString() }, ct);
         }
 
         await _uow.CommitAsync(ct);

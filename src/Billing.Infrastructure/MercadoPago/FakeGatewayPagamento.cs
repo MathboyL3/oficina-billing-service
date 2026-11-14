@@ -1,46 +1,44 @@
-using System.Collections.Concurrent;
-using Billing.Application.Pagamentos;
+﻿using Billing.Application.Pagamentos;
 using Microsoft.Extensions.Options;
 
 namespace Billing.Infrastructure.MercadoPago;
 
 /// <summary>
-/// Gateway em memória para testes/demo (<c>MercadoPago:Modo=Fake</c>): confirma na hora, sem
-/// webhook e sem rede. O comportamento (aprovar/recusar/falhar estorno) vem da configuração.
+/// Gateway para testes/demo (<c>MercadoPago:Modo=Fake</c>): confirma na hora, sem webhook e sem rede.
+/// Sem estado: o paymentId é <c>fake-{PagamentoId:N}</c> e o status vem só da configuração
+/// (aprovar/recusar/falhar estorno), então qualquer réplica ou restart atende qualquer pagamento Fake.
+/// O Fake não conhece a OS pelo paymentId: <see cref="PagamentoInfo.ExternalReference"/> vem nulo
+/// e o chamador (CriarCobrancaConsumer) a preenche.
 /// </summary>
 public sealed class FakeGatewayPagamento : IGatewayPagamento
 {
-    private static readonly ConcurrentDictionary<string, PagamentoInfo> PorReferencia = new();
+    private const string Prefixo = "fake-";
     private readonly MercadoPagoOptions _opt;
 
     public FakeGatewayPagamento(IOptions<MercadoPagoOptions> opt) => _opt = opt.Value;
 
+    private static bool PaymentIdValido(string paymentId)
+        => paymentId.StartsWith(Prefixo, StringComparison.Ordinal) && Guid.TryParseExact(paymentId[Prefixo.Length..], "N", out _);
+
     public Task<CobrancaCriadaResult> CriarCobrancaAsync(CriarCobrancaRequest r, CancellationToken ct)
-    {
-        var referencia = r.OrdemServicoId.ToString();
-        var status = _opt.FakeComportamento == "Recusar" ? StatusPagamentoGateway.Recusado : StatusPagamentoGateway.Aprovado;
-        PorReferencia[referencia] = new PagamentoInfo($"fake-{r.PagamentoId:N}", status, referencia, status.ToString());
-        return Task.FromResult(new CobrancaCriadaResult($"fake-pref-{r.PagamentoId}", $"{_opt.PublicBaseUrl.TrimEnd('/')}/fake-checkout/{r.PagamentoId}"));
-    }
+        => Task.FromResult(new CobrancaCriadaResult($"fake-pref-{r.PagamentoId}", $"{_opt.PublicBaseUrl.TrimEnd('/')}/fake-checkout/{r.PagamentoId}"));
 
     public Task<PagamentoInfo> ObterPagamentoAsync(string paymentId, CancellationToken ct)
     {
-        var info = PorReferencia.Values.FirstOrDefault(p => p.PaymentId == paymentId)
-            ?? throw new HttpRequestException($"Pagamento {paymentId} não encontrado (404).", null, System.Net.HttpStatusCode.NotFound);
-        return Task.FromResult(info);
+        if (!PaymentIdValido(paymentId))
+            throw new HttpRequestException($"Pagamento {paymentId} não encontrado (404).", null, System.Net.HttpStatusCode.NotFound);
+        var status = _opt.FakeComportamento == "Recusar" ? StatusPagamentoGateway.Recusado : StatusPagamentoGateway.Aprovado;
+        return Task.FromResult(new PagamentoInfo(paymentId, status, null, status.ToString()));
     }
 
+    /// <summary>Sem estado, o Fake não localiza pagamento por referência.</summary>
     public Task<PagamentoInfo?> BuscarPorReferenciaAsync(string externalReference, CancellationToken ct)
-        => Task.FromResult(PorReferencia.TryGetValue(externalReference, out var p) ? p : null);
+        => Task.FromResult<PagamentoInfo?>(null);
 
     public Task<EstornoResult> EstornarAsync(string paymentId, decimal? valor, CancellationToken ct)
     {
         if (_opt.FakeComportamento == "FalharEstorno")
             return Task.FromResult(new EstornoResult(false, "Falha simulada de estorno."));
-        var par = PorReferencia.FirstOrDefault(kv => kv.Value.PaymentId == paymentId);
-        if (par.Key is null)
-            return Task.FromResult(new EstornoResult(false, "404: pagamento não encontrado"));
-        PorReferencia[par.Key] = par.Value with { Status = StatusPagamentoGateway.Estornado, StatusBruto = "refunded" };
-        return Task.FromResult(new EstornoResult(true, null));
+        return Task.FromResult(PaymentIdValido(paymentId) ? new EstornoResult(true, null) : new EstornoResult(false, "404: pagamento não encontrado"));
     }
 }
