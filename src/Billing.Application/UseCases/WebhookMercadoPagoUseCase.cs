@@ -1,6 +1,5 @@
 using Billing.Application.Common;
 using Billing.Application.Pagamentos;
-using Billing.Application.Consumers;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using MassTransit;
@@ -45,14 +44,17 @@ public sealed class WebhookMercadoPagoUseCase
         switch (info.Status)
         {
             case StatusPagamentoGateway.Aprovado:
-                pag.Aprovar(info.PaymentId);
-                if (!await GravarAsync(pag, ct)) return;
                 var orc = await _orcs.ObterPorOsAsync(pag.OrdemServicoId, ct);
-                if (orc is { Status: StatusOrcamento.Cancelado or StatusOrcamento.Recusado })
+                var aposCancelamento = orc is { Status: StatusOrcamento.Cancelado or StatusOrcamento.Recusado };
+                pag.Aprovar(info.PaymentId);
+                // Registra a intenção antes de chamar o gateway: se o commit falhar depois do estorno real, o reprocessamento encontra EstornoPendente.
+                if (aposCancelamento) pag.MarcarEstornoPendente();
+                if (!await GravarAsync(pag, ct)) return;
+                if (aposCancelamento)
                 {
                     // OS já cancelada/recusada: a Saga não espera mais o pagamento, então devolve o dinheiro em vez de confirmar.
                     _log.LogWarning("{alerta}: pagamento {PagamentoId} da OS {OrdemServicoId} aprovado com orçamento {StatusOrcamento}; estornando",
-                        "pagamento_apos_cancelamento", pag.Id, pag.OrdemServicoId, orc.Status);
+                        "pagamento_apos_cancelamento", pag.Id, pag.OrdemServicoId, orc!.Status);
                     await EstornoPagamento.EstornarEPublicarAsync(_bus, _repo, _gw, pag, ct);
                     break;
                 }

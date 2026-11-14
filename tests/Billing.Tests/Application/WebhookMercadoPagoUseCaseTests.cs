@@ -5,6 +5,7 @@ using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;
 using FluentAssertions;
 using MassTransit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Oficina.Contracts;
@@ -154,4 +155,41 @@ public class WebhookMercadoPagoUseCaseTests
         p.Status.Should().Be(StatusPagamento.Aprovado);
         _gw.Verify(g => g.EstornarAsync(It.IsAny<string>(), It.IsAny<decimal?>(), It.IsAny<CancellationToken>()), Times.Never);
         _bus.Verify(b => b.Publish(It.Is<PagamentoConfirmado>(m => m.PagamentoId == p.Id), It.IsAny<CancellationToken>()), Times.Once);
-    }}
+    }
+
+    [Fact]
+    public async Task Aprovado_apos_cancelamento_registra_EstornoPendente_antes_de_chamar_o_gateway()
+    {
+        var p = Pendente();
+        OrcamentoCom(p, true);
+        Aprovado(p, "93");
+        var statusNaGravacao = new List<StatusPagamento>();
+        _repo.Setup(r => r.AtualizarAsync(p, It.IsAny<CancellationToken>())).Callback<Pagamento, CancellationToken>((x, _) => statusNaGravacao.Add(x.Status)).Returns(Task.CompletedTask);
+        StatusPagamento? statusNoEstorno = null;
+        _gw.Setup(g => g.EstornarAsync("93", null, It.IsAny<CancellationToken>()))
+            .Callback(() => statusNoEstorno = p.Status).ReturnsAsync(new EstornoResult(true, null));
+
+        await Uc().ProcessarAsync("93", default);
+
+        statusNaGravacao.Should().Equal(StatusPagamento.EstornoPendente, StatusPagamento.Estornado);
+        statusNoEstorno.Should().Be(StatusPagamento.EstornoPendente);
+    }
+
+    [Fact]
+    public async Task Aprovado_apos_cancelamento_loga_alerta_pagamento_apos_cancelamento()
+    {
+        var p = Pendente();
+        OrcamentoCom(p, true);
+        Aprovado(p, "94");
+        _gw.Setup(g => g.EstornarAsync("94", null, It.IsAny<CancellationToken>())).ReturnsAsync(new EstornoResult(true, null));
+        var log = new Mock<ILogger<WebhookMercadoPagoUseCase>>();
+        log.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+        var uc = new WebhookMercadoPagoUseCase(_gw.Object, _repo.Object, _orcs.Object, _bus.Object, log.Object);
+
+        await uc.ProcessarAsync("94", default);
+
+        log.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("pagamento_apos_cancelamento") && v.ToString()!.Contains(p.Id.ToString())),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+}

@@ -22,6 +22,11 @@ Orçamento e pagamento (Mercado Pago) da OS — Saga sobre RabbitMQ (MassTransit
   MassTransit reprocessa a mensagem pelo caminho idempotente.
 - `GET /api/orcamentos/{id}`, `GET /api/orcamentos?osId=` e `GET /api/pagamentos/{id}`: cliente só lê o que é seu (403); staff lê tudo.
 
+## Runbook: estorno falho após cancelamento
+Pagamento aprovado depois do cancelamento da OS é estornado automaticamente (log `pagamento_apos_cancelamento`). Se o estorno falhar, o pagamento fica `EstornoPendente` e é publicado `EstornoFalhou`. Sem Saga para reprocessar:
+1. Consultar o painel do Mercado Pago (o pagamento já foi estornado lá? o MP é a fonte da verdade).
+2. Chamar `POST /api/pagamentos/{id}/reprocessar-estorno` (role `Gerente`): reexecuta o estorno e, se o MP já estiver `refunded`, apenas marca `Estornado`. Em `Estornado`/outro status devolve 409; se falhar de novo continua `EstornoPendente`.
+
 ## Testes e cobertura
 `dotnet test Billing.slnx` exige >= 80% de linhas e **precisa de Docker**: `MongoPersistenciaTests` sobe um MongoDB 7 em replica set
 (Testcontainers) e exercita repositórios, índices únicos, concorrência otimista e o unit of work (commit/rollback) de verdade.

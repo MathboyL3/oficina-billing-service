@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.Configure<ModoPagamento>(config.GetSection("MercadoPago"));
         services.AddScoped<WebhookMercadoPagoUseCase>();
         services.AddScoped<OrcamentoUseCases>();
+        services.AddScoped<PagamentoUseCases>();
         return services;
     }
 }

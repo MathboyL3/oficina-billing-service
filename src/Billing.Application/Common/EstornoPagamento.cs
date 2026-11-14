@@ -3,7 +3,7 @@ using Billing.Domain.Pagamentos;
 using MassTransit;
 using Oficina.Contracts;
 
-namespace Billing.Application.Consumers;
+namespace Billing.Application.Common;
 
 /// <summary>Estorno compartilhado pelos consumidores de compensação.</summary>
 internal static class EstornoPagamento

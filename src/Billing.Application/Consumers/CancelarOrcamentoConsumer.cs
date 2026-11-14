@@ -1,4 +1,5 @@
 ﻿using Billing.Application.Pagamentos;
+using Billing.Application.Common;
 using Billing.Domain.Common;
 using Billing.Domain.Orcamentos;
 using Billing.Domain.Pagamentos;

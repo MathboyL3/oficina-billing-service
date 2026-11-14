@@ -12,10 +12,20 @@ namespace Billing.Api.Controllers;
 public class PagamentosController : ControllerBase
 {
     private readonly OrcamentoUseCases _uc;
-    public PagamentosController(OrcamentoUseCases uc) => _uc = uc;
+    private readonly PagamentoUseCases _pagamentos;
+    public PagamentosController(OrcamentoUseCases uc, PagamentoUseCases pagamentos)
+    {
+        _uc = uc;
+        _pagamentos = pagamentos;
+    }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<PagamentoResponse>> Obter(Guid id, CancellationToken ct) => Ok(await _uc.ObterPagamentoAsync(id, ClienteDoToken(), ct));
+
+    /// <summary>Reprocessa um estorno que ficou em EstornoPendente (só Gerente). Outro status = 409.</summary>
+    [HttpPost("{id:guid}/reprocessar-estorno")]
+    [Authorize(Roles = "Gerente")]
+    public async Task<ActionResult<PagamentoResponse>> ReprocessarEstorno(Guid id, CancellationToken ct) => Ok(await _pagamentos.ReprocessarEstornoAsync(id, ct));
 
     /// <summary>Cliente só lê o próprio pagamento: devolve o id do token; atendente/gerente passam sem restrição.</summary>
     private Guid? ClienteDoToken()
