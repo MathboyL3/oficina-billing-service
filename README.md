@@ -43,3 +43,15 @@ Requer Docker. Os 3 serviços compartilham a rede externa `oficina-dev` (os cont
 3. Depois `oficina-execucao-service` e `oficina-billing-service` (mesmo comando).
 
 APIs: os `:5001`, billing `:5002`, execucao `:5003` (`/health/ready`). RabbitMQ management: `:15672` (guest/guest).
+
+## Deploy no Kubernetes
+
+Pré-requisitos:
+- `fiap-infra-k8s` aplicado (namespace `oficina` e RabbitMQ com o Secret `rabbitmq-credentials`).
+- Variáveis de ambiente: `JWT_SECRET`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `NEW_RELIC_LICENSE_KEY`, `GHCR_USER` e `GHCR_TOKEN` (PAT com `read:packages`).
+
+Passos (a partir da raiz do repo):
+1. `./k8s/bootstrap-secrets.ps1` — cria/atualiza os Secrets e o `ghcr-pull` de forma idempotente (falha se uma env obrigatória estiver vazia). `k8s/secret.example.yaml` documenta as chaves.
+2. `kubectl apply -k k8s/`
+
+**Notas:** o Mongo (`billing-mongo`) roda **sem autenticação** e só é acessível dentro do cluster. Se o PVC for recriado, reexecute o Job de init do replica set: `kubectl delete job billing-mongo-init -n oficina && kubectl apply -k k8s/`. `MercadoPago__PublicBaseUrl` aponta para o Kong local (`http://localhost:32080/billing`); a rota `/billing` no Kong é criada na Task 4.4.

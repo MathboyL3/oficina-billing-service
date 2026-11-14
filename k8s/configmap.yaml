@@ -17,6 +17,7 @@ data:
   Mongo__Database: oficina_billing
   MercadoPago__Modo: Fake
   MercadoPago__Sandbox: "true"
-  MercadoPago__PublicBaseUrl: <url-publica-do-gateway-kong>
+  # Proxy do Kong local da Fase 3 (NodePort 32080); a 4.4 roteia /billing no Kong.
+  MercadoPago__PublicBaseUrl: http://localhost:32080/billing
   NEW_RELIC_APP_NAME: oficina-billing-service
   NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
