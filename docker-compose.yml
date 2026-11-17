@@ -1,0 +1,44 @@
+services:
+  billing-mongo:
+    image: mongo:7
+    container_name: billing-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - billing-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try{if(rs.status().ok!=1){quit(1)}}catch(e){var r=rs.initiate({_id:'rs0',members:[{_id:0,host:'billing-mongo:27017'}]}); if(!r.ok){quit(1)}; quit(1)}"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+
+  billing-api:
+    build: .
+    image: oficina-billing-service:local
+    container_name: billing-api
+    depends_on:
+      billing-mongo:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      ConnectionStrings__Mongo: mongodb://billing-mongo:27017/?replicaSet=rs0&directConnection=true
+      Mongo__Database: oficina_billing
+      MercadoPago__Modo: Fake
+      MercadoPago__WebhookSecret: dev-webhook-secret-0123456789
+    ports:
+      - "5002:8080"
+
+volumes:
+  billing-mongo-data:
+
+networks:
+  default:
+    name: oficina-dev
+    external: true
