@@ -102,4 +102,15 @@ public class OrcamentoUseCasesTests
         var act = () => Uc().ObterPagamentoAsync(Guid.NewGuid(), null, default);
         await act.Should().ThrowAsync<NotFoundException>();
     }
+
+    [Fact]
+    public async Task ObterPagamentoPorOs_mapeia_e_sem_pagamento_NotFound()
+    {
+        var os = Guid.NewGuid();
+        var p = Pagamento.Criar(os, Guid.NewGuid(), 10m);
+        _pags.Setup(r => r.ObterPorOsAsync(os, It.IsAny<CancellationToken>())).ReturnsAsync(p);
+        (await Uc().ObterPagamentoPorOsAsync(os, null, default)).Id.Should().Be(p.Id);
+        var act = () => Uc().ObterPagamentoPorOsAsync(Guid.NewGuid(), null, default);
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
 }

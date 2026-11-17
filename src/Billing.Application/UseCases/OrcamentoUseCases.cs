@@ -64,6 +64,18 @@ public sealed class OrcamentoUseCases
     public async Task<PagamentoResponse> ObterPagamentoAsync(Guid id, Guid? clienteDoToken = null, CancellationToken ct = default)
     {
         var p = await _pags.ObterPorIdAsync(id, ct) ?? throw new NotFoundException("Pagamento", id);
+        return await ComDonoVerificado(p, clienteDoToken, ct);
+    }
+
+    /// <summary>Pagamento da OS (há no máximo um por OS).</summary>
+    public async Task<PagamentoResponse> ObterPagamentoPorOsAsync(Guid osId, Guid? clienteDoToken = null, CancellationToken ct = default)
+    {
+        var p = await _pags.ObterPorOsAsync(osId, ct) ?? throw new NotFoundException("Pagamento da OS", osId);
+        return await ComDonoVerificado(p, clienteDoToken, ct);
+    }
+
+    private async Task<PagamentoResponse> ComDonoVerificado(Pagamento p, Guid? clienteDoToken, CancellationToken ct)
+    {
         if (clienteDoToken is not null)
         {
             // O dono do pagamento é o dono do orçamento; sem orçamento resolvível, cliente não lê.
