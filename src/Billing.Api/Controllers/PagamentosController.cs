@@ -22,6 +22,11 @@ public class PagamentosController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<PagamentoResponse>> Obter(Guid id, CancellationToken ct) => Ok(await _uc.ObterPagamentoAsync(id, ClienteDoToken(), ct));
 
+    /// <summary>Pagamento de uma OS (o id do pagamento some da saga quando ela termina).</summary>
+    [HttpGet]
+    public async Task<ActionResult<PagamentoResponse>> ObterPorOs([FromQuery] Guid osId, CancellationToken ct)
+        => Ok(await _uc.ObterPagamentoPorOsAsync(osId, ClienteDoToken(), ct));
+
     /// <summary>Reprocessa um estorno que ficou em EstornoPendente (só Gerente). Outro status = 409.</summary>
     [HttpPost("{id:guid}/reprocessar-estorno")]
     [Authorize(Roles = "Gerente")]
