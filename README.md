@@ -138,13 +138,15 @@ Exclusões de cobertura:
 
 Pré-requisitos:
 - `fiap-infra-k8s` aplicado (namespace `oficina`, RabbitMQ com o Secret `rabbitmq-credentials` e as rotas do Kong).
-- Variáveis de ambiente: `JWT_SECRET`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `NEW_RELIC_LICENSE_KEY`, `GHCR_USER` e `GHCR_TOKEN` (PAT com `read:packages`).
+- Variáveis de ambiente obrigatórias: `JWT_SECRET`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `NEW_RELIC_LICENSE_KEY`.
+- Opcionais, por ambiente: `MP_MODO` (`Real`/`Fake`), `MP_SANDBOX` (`true`/`false`) e `MP_PUBLIC_BASE_URL`. Vão para o Secret, que sobrepõe o ConfigMap (padrão `Fake`), então o deploy do pipeline não os desfaz.
+- `GHCR_USER` e `GHCR_TOKEN` (PAT com `read:packages`) só se os pacotes do GHCR forem privados; hoje são públicos.
 
 Passos (a partir da raiz do repo):
-1. `./k8s/bootstrap-secrets.ps1` — cria/atualiza os Secrets e o `ghcr-pull` de forma idempotente (falha se uma env obrigatória estiver vazia). `k8s/secret.example.yaml` documenta as chaves.
+1. `./k8s/bootstrap-secrets.ps1` — cria/atualiza os Secrets (e o `ghcr-pull`, se houver `GHCR_TOKEN`) de forma idempotente (falha se uma env obrigatória estiver vazia). `k8s/secret.example.yaml` documenta as chaves.
 2. `kubectl apply -k k8s/`
 
-**Notas:** o Mongo (`billing-mongo`, StatefulSet de 1 nó em replica set) roda **sem autenticação** e só é acessível dentro do cluster. Se o PVC for recriado, reexecute o Job de init do replica set: `kubectl delete job billing-mongo-init -n oficina && kubectl apply -k k8s/`. Acesso externo pelo Kong (NodePort **32080**): `/billing/api/...` e `/billing/webhooks/mercadopago`. `MercadoPago__PublicBaseUrl` aponta para `http://localhost:32080/billing`, o que só serve ao modo Fake: com o Mercado Pago real é preciso um endereço público (túnel, ex.: ngrok/cloudflared) apontando para o proxy do Kong. RabbitMQ UI no cluster: NodePort **31672**.
+**Notas:** o Mongo (`billing-mongo`, StatefulSet de 1 nó em replica set) roda **sem autenticação** e só é acessível dentro do cluster. Se o PVC for recriado, reexecute o Job de init do replica set: `kubectl delete job billing-mongo-init -n oficina && kubectl apply -k k8s/`. Acesso externo pelo Kong (NodePort **32080**): `/billing/api/...` e `/billing/webhooks/mercadopago`. `MercadoPago__PublicBaseUrl` aponta para `http://localhost:32080/billing`, o que só serve ao modo Fake: com o Mercado Pago real é preciso um endereço público (túnel, ex.: ngrok/cloudflared) apontando para o proxy do Kong, passado em `MP_PUBLIC_BASE_URL` (ex.: `https://<tunel>/billing`). Com credenciais de vendedor de teste use `MP_SANDBOX=false`: o checkout de teste é o `init_point` normal, pago com um comprador de teste logado. RabbitMQ UI no cluster: NodePort **31672**.
 
 ## CI/CD
 
